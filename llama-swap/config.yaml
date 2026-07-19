@@ -1,0 +1,32 @@
+# llama-swap config: route each model to the right llama.cpp fork binary.
+# All four forks are pre-baked into the image at /opt/llama/<fork>/bin.
+# Edit the `cmd` path to switch a model to a different fork.
+
+listen: 0.0.0.0:8080
+
+models:
+  # Default / general models -> vanilla (upstream, stable)
+  - name: ".*"
+    cmd: "/opt/llama/vanilla/bin/llama-server --model {model} {args}"
+    default_args:
+      n_gpu_layers: 999
+
+  # TurboQuant KV-cache (--cache-type-k turbo3/turbo4) models
+  - name: ".*turboquant.*"
+    cmd: "/opt/llama/turboquant/bin/llama-server --model {model} {args}"
+    default_args:
+      n_gpu_layers: 999
+      cache_type_k: turbo3
+      cache_type_v: turbo3
+
+  # Prism ternary (Q2_0) models
+  - name: ".*prism.*|.*bonsai.*|.*ternary.*"
+    cmd: "/opt/llama/prism/bin/llama-server --model {model} {args}"
+    default_args:
+      n_gpu_layers: 999
+
+  # Atomic fork (TheTom + Gemma4 MTP / Qwen3.6 NextN)
+  - name: ".*atomic.*"
+    cmd: "/opt/llama/atomic/bin/llama-server --model {model} {args}"
+    default_args:
+      n_gpu_layers: 999

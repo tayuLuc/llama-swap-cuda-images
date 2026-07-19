@@ -1,0 +1,114 @@
+name: Build llama-swap CUDA image
+
+# Builds the llama-swap Docker image bundling ALL 4 llama.cpp forks
+# (vanilla + turboquant + prism + atomic) for CUDA 13.2 / RTX 5090 (sm_120).
+#
+# Triggered by:
+#   - workflow_dispatch with `mode` (stable|nightly)  — fired from the source
+#     repo's release job whenever a fork update is detected.
+#   - optionally: schedule (nightly rebuild) and manual dispatch.
+#
+# Images pushed to GHCR:
+#   ghcr.io/tayuLuc/llama-swap-cuda-images:stable          (moving alias)
+#   ghcr.io/tayuLuc/llama-swap-cuda-images:stable-<date>-<tag>   (immutable)
+#   ghcr.io/tayuLuc/llama-swap-cuda-images:nightly         (moving alias)
+#   ghcr.io/tayuLuc/llama-swap-cuda-images:nightly-<date>-<sha>   (immutable)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Which fork set to pack: stable (releases) or nightly (branch HEADs)'
+        required: true
+        type: choice
+        options:
+          - stable
+          - nightly
+        default: stable
+  schedule:
+    - cron: '17 0 * * *'   # periodic nightly rebuild
+
+permissions:
+  contents: write     # create git tags / releases for build audit
+  packages: write     # push to GHCR
+
+env:
+  IMAGE: ghcr.io/tayuLuc/llama-swap-cuda-images
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Resolve mode: dispatch input, else schedule => nightly.
+      - name: Resolve mode
+        id: mode
+        run: |
+          if [ -n "${{ github.event.inputs.mode }}" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=nightly" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Capture which fork tags we are packing (for the audit release notes).
+      - name: Capture packed fork tags
+        id: tags
+        run: |
+          MODE="${{ steps.mode.outputs.mode }}"
+          SRC=tayuLuc/yet-another-llama.cpp-cuda-fork
+          rels=$(curl -s "https://api.github.com/repos/$SRC/releases?per_page=100")
+          out=""
+          for fork in vanilla turboquant prism atomic; do
+            if [ "$MODE" = "nightly" ]; then
+              tag=$(echo "$rels" | jq -r --arg f "$fork" '[.[] | select(.tag_name | test("^"+$f+"-nightly-[0-9a-f]+$"))] | sort_by(.published_at) | .[-1].tag_name // empty')
+            else
+              tag=$(echo "$rels" | jq -r --arg f "$fork" '[.[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not)] | sort_by(.published_at) | .[-1].tag_name // empty')
+            fi
+            out="${out}${fork}: ${tag:-MISSING}\n"
+          done
+          echo "packed<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$out" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            BUILD_MODE=${{ steps.mode.outputs.mode }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.mode.outputs.mode }}
+            ${{ env.IMAGE }}:${{ steps.mode.outputs.mode }}-$(date -u +%Y%m%d)-${{ github.run_id }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create audit release (git tag + notes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MODE="${{ steps.mode.outputs.mode }}"
+          TAG="${MODE}-$(date -u +%Y%m%d)-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "llama-swap image $TAG" \
+            --notes "CUDA 13.2 llama-swap image (mode=$MODE), all 4 forks packed:
+
+          ${{ steps.tags.outputs.packed }}
+          Image: ${{ env.IMAGE }}:$TAG" \
+            $( [ "$MODE" = "nightly" ] && echo "--prerelease" )
