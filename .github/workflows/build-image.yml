@@ -32,7 +32,7 @@ permissions:
   packages: write     # push to GHCR
 
 env:
-  IMAGE: ghcr.io/tayuLuc/llama-swap-cuda-images
+  IMAGE: ghcr.io/tayuluc/llama-swap-cuda-images
 
 jobs:
   build-image:
