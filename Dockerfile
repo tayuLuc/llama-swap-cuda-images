@@ -19,15 +19,15 @@ RUN curl -sL "https://github.com/mostlygeek/llama-swap/releases/download/${LLAMA
 # Build arg: stable or nightly — decides which release set we pack.
 ARG BUILD_MODE=stable
 
-# Fetch all 4 fork binaries (CUDA 13.2, amd64) into /opt/llama/<fork>/bin.
+# Fetch all 4 fork binaries (CUDA 13.2, amd64) into /opt/llama/<fork>/.
 COPY scripts/fetch-binaries.sh /tmp/fetch-binaries.sh
 RUN chmod +x /tmp/fetch-binaries.sh && \
     /tmp/fetch-binaries.sh "${BUILD_MODE}" /opt/llama && \
     rm -f /tmp/fetch-binaries.sh
 
 # vanilla is the default llama-server on PATH.
-ENV PATH="/opt/llama/vanilla/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/opt/llama/vanilla/bin:${LD_LIBRARY_PATH:-}"
+ENV PATH="/opt/llama/vanilla:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/llama/vanilla:${LD_LIBRARY_PATH:-}"
 
 # llama-swap config: choose fork per model.
 COPY llama-swap/config.yaml /etc/llama-swap/config.yaml
