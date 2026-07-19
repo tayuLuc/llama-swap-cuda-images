@@ -61,6 +61,14 @@ jobs:
             echo "mode=nightly" >> "$GITHUB_OUTPUT"
           fi
 
+      # Compute immutable tag (shell-expanded date + run id).
+      - name: Compute tags
+        id: tags-calc
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          echo "moving=${{ steps.mode.outputs.mode }}" >> "$GITHUB_OUTPUT"
+          echo "immutable=${{ steps.mode.outputs.mode }}-${DATE}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
       # Capture which fork tags we are packing (for the audit release notes).
       - name: Capture packed fork tags
         id: tags
@@ -89,8 +97,8 @@ jobs:
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
           tags: |
-            ${{ env.IMAGE }}:${{ steps.mode.outputs.mode }}
-            ${{ env.IMAGE }}:${{ steps.mode.outputs.mode }}-$(date -u +%Y%m%d)-${{ github.run_id }}
+            ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
+            ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.immutable }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
