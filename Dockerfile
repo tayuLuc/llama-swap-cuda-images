@@ -1,3 +1,6 @@
+# llama-swap binary source: official minimal image (carries just the llama-swap binary).
+FROM ghcr.io/mostlygeek/llama-swap:cuda AS llama-swap
+
 # llama-swap image bundling all 4 llama.cpp CUDA 13.2 forks (RTX 5090 / sm_120).
 # Binaries are fetched at build time from the source repo's GitHub releases.
 ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
@@ -10,16 +13,19 @@ LABEL org.opencontainers.image.title="llama-swap CUDA 13.2 image" \
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# llama-swap (single static binary) + runtime deps for the bundled llama.cpp bins.
+# llama-swap runtime deps + libs for the bundled llama.cpp bins (libgomp = OpenMP).
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends ca-certificates curl jq libc6 libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
-# Fetch llama-swap release binary.
-ARG LLAMA_SWAP_VERSION=v1.2.0
-RUN curl -sL "https://github.com/mostlygeek/llama-swap/releases/download/${LLAMA_SWAP_VERSION}/llama-swap-linux-amd64" \
-      -o /usr/local/bin/llama-swap && \
-    chmod +x /usr/local/bin/llama-swap
+# Match upstream llama-swap image: provide a non-root app user/group (GID/UID 10001)
+# so the container can run as --user 10001:10001 without "missing group" errors.
+RUN groupadd --system --gid 10001 app && \
+    useradd --system --uid 10001 --gid 10001 --home-dir /app --create-home app
+
+# Pull the llama-swap binary from the official minimal image (multi-stage COPY).
+COPY --from=llama-swap /app/llama-swap /usr/local/bin/llama-swap
+RUN chmod +x /usr/local/bin/llama-swap
 
 # Build arg: stable or nightly — decides which release set we pack.
 ARG BUILD_MODE=stable
@@ -41,6 +47,9 @@ COPY llama-swap/config.yaml /etc/llama-swap/config.yaml
 
 EXPOSE 8080
 WORKDIR /models
+
+# Run as the non-root app user (matches upstream llama-swap image).
+USER app
 
 # Default: serve llama-swap. Override CMD to run a raw llama-server if desired.
 CMD ["llama-swap", "--config", "/etc/llama-swap/config.yaml", "--host", "0.0.0.0", "--port", "8080"]
