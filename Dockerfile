@@ -1,9 +1,11 @@
+# Global build arg — must precede any FROM so it is visible to later stages.
+ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
+
 # llama-swap binary source: official minimal image (CPU base; binary is CUDA-agnostic).
 FROM ghcr.io/mostlygeek/llama-swap:cpu AS llama-swap
 
 # llama-swap image bundling all 4 llama.cpp CUDA 13.2 forks (RTX 5090 / sm_120).
 # Binaries are fetched at build time from the source repo's GitHub releases.
-ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
 FROM nvidia/cuda:${CUDA_TAG}
 
 LABEL org.opencontainers.image.title="llama-swap CUDA 13.2 image" \
