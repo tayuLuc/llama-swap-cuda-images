@@ -31,8 +31,10 @@ RUN chmod +x /tmp/fetch-binaries.sh && \
     rm -f /tmp/fetch-binaries.sh
 
 # vanilla is the default llama-server on PATH.
+# CUDA runtime .so's come from the base nvidia/cuda:13.2-runtime image
+# (/usr/local/cuda/lib64); the fork tarballs no longer bundle them.
 ENV PATH="/opt/llama/vanilla:${PATH}"
-ENV LD_LIBRARY_PATH="/opt/llama/vanilla:${LD_LIBRARY_PATH:-}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 
 # llama-swap config: choose fork per model.
 COPY llama-swap/config.yaml /etc/llama-swap/config.yaml
