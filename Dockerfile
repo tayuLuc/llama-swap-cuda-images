@@ -3,6 +3,11 @@
 ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
 FROM nvidia/cuda:${CUDA_TAG}
 
+LABEL org.opencontainers.image.title="llama-swap CUDA 13.2 image" \
+      org.opencontainers.image.description="llama-swap + 4 llama.cpp CUDA 13.2 forks (vanilla/turboquant/atomic/prism) for RTX 5090 (sm_120), amd64" \
+      org.opencontainers.image.source="https://github.com/tayuLuc/llama-swap-cuda-images" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # llama-swap (single static binary) + runtime deps for the bundled llama.cpp bins.
