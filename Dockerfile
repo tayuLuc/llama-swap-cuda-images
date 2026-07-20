@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # llama-swap (single static binary) + runtime deps for the bundled llama.cpp bins.
 RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends ca-certificates curl jq libc6 && \
+    apt-get install -y --no-install-recommends ca-certificates curl jq libc6 libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Fetch llama-swap release binary.
