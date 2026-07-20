@@ -26,13 +26,15 @@ RUN groupadd --system --gid 10001 app && \
     useradd --system --uid 10001 --gid 10001 --home-dir /app --create-home app
 
 # Pull the llama-swap binary from the official minimal image (multi-stage COPY).
-COPY --from=llama-swap /app/llama-swap /usr/local/bin/llama-swap
+COPY --chown=app:app --from=llama-swap /app/llama-swap /usr/local/bin/llama-swap
 RUN chmod +x /usr/local/bin/llama-swap
 
 # Build arg: stable or nightly — decides which release set we pack.
 ARG BUILD_MODE=stable
 
 # Fetch all 4 fork binaries (CUDA 13.2, amd64) into /opt/llama/<fork>/.
+# fetch-binaries.sh extracts with --owner=app (see script) so the non-root
+# runtime can read/execute them without a separate chown pass.
 COPY scripts/fetch-binaries.sh /tmp/fetch-binaries.sh
 RUN chmod +x /tmp/fetch-binaries.sh && \
     /tmp/fetch-binaries.sh "${BUILD_MODE}" /opt/llama && \
@@ -45,7 +47,7 @@ ENV PATH="/opt/llama/vanilla:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 
 # llama-swap config: choose fork per model.
-COPY llama-swap/config.yaml /etc/llama-swap/config.yaml
+COPY --chown=app:app llama-swap/config.yaml /etc/llama-swap/config.yaml
 
 EXPOSE 8080
 WORKDIR /models

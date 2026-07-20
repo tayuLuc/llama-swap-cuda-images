@@ -50,7 +50,7 @@ for fork in $FORKS; do
   echo "-> $fork: $tag"
   tmp="/tmp/${fork}.tar.gz"
   curl -sL "$url" -o "$tmp"
-  tar -xzf "$tmp" -C "$DEST/"
+    tar -xzf "$tmp" -C "$DEST/" --owner=app --group=app
   rm -f "$tmp"
 done
 
