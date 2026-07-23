@@ -55,10 +55,7 @@ for fork in $FORKS; do
   echo "-> $fork: $tag"
   tmp="/tmp/${fork}.tar.gz"
   curl -sL "$url" -o "$tmp"
-  tar -xzf "$tmp" -C "$DEST/" --owner=app --group=app
-  # Tarball permissions may strip execute bits — ensure the non-root app
-  # user can read and execute all binaries under this fork directory.
-  chmod -R +x "$DEST/$fork/"
+  tar -xzf "$tmp" -C "$DEST/"
   rm -f "$tmp"
 done
 
