@@ -39,7 +39,7 @@ RUN apt-get update -qq && \
 
 # Non-root app user (GID/UID 10001 matches upstream llama-swap image).
 RUN groupadd --system --gid 10001 app && \
-    useradd --system --uid 10001 --gid 10001 --home-dir /app --create-home app
+    useradd --uid 10001 --gid 10001 --home-dir /app --create-home app
 
 # llama-swap binary — multi-stage COPY sets ownership; chmod for execute.
 COPY --chown=app:app --from=llama-swap /app/llama-swap /usr/local/bin/llama-swap
