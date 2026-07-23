@@ -6,7 +6,7 @@ ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
 # discarded after COPY, keeping runtime image lean).
 # ============================================================
 FROM alpine:3.20 AS fetcher
-RUN apk add --no-cache curl jq
+RUN apk add --no-cache curl jq bash
 ARG BUILD_MODE=stable
 COPY scripts/fetch-binaries.sh /tmp/fetch-binaries.sh
 RUN chmod +x /tmp/fetch-binaries.sh && \
