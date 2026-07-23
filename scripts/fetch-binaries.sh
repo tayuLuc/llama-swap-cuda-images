@@ -18,7 +18,10 @@ mkdir -p "$DEST"
 
 echo "==> Fetching mode=$MODE binaries for forks: $FORKS"
 
-rels_json=$(curl -s "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100")
+# Use GH_TOKEN for authenticated API calls (avoids rate limits).
+AUTH=()
+[ -n "${GH_TOKEN:-}" ] && AUTH=(-H "Authorization: token $GH_TOKEN")
+rels_json=$(curl -s "${AUTH[@]}" "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100")
 
 for fork in $FORKS; do
   if [ "$MODE" = "nightly" ]; then
@@ -39,8 +42,10 @@ for fork in $FORKS; do
   fi
 
   # download the amd64 tarball for this tag
-  url=$(echo "$rels_json" | jq -r --arg t "$tag" \
-    '.[] | select(.tag_name==$t) | .assets[] | select(.name|test("amd64.tar.gz$")) | .browser_download_url' | head -1)
+  # Match only fork-specific tarballs (llama.cpp-cuda-13.2-<fork>-*.tar.gz),
+  # NOT the shared cuda-runtime asset that ships alongside vanilla releases.
+  url=$(echo "$rels_json" | jq -r --arg t "$tag" --arg f "$fork" \
+    '.[] | select(.tag_name==$t) | .assets[] | select(.name|test("llama\\.cpp.*" + $f + ".*amd64\\.tar\\.gz$")) | .browser_download_url' | head -1)
 
   if [ -z "$url" ]; then
     echo "!! No amd64 asset for tag=$tag — skipping"

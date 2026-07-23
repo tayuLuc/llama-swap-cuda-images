@@ -70,12 +70,15 @@ jobs:
           echo "immutable=${{ steps.mode.outputs.mode }}-${DATE}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
 
       # Capture which fork tags we are packing (for the audit release notes).
+      # Uses GITHUB_TOKEN to avoid unauthenticated API rate limits.
       - name: Capture packed fork tags
         id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
           SRC=tayuLuc/yet-another-llama.cpp-cuda-fork
-          rels=$(curl -s "https://api.github.com/repos/$SRC/releases?per_page=100")
+          rels=$(curl -s -H "Authorization: token ${GH_TOKEN}" "https://api.github.com/repos/$SRC/releases?per_page=100")
           out=""
           for fork in vanilla turboquant prism atomic; do
             if [ "$MODE" = "nightly" ]; then
@@ -96,6 +99,7 @@ jobs:
           push: true
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
+            CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.immutable }}
