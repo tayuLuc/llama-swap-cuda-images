@@ -48,10 +48,19 @@ for page in 1 2 3 4 5 6 7 8 9 10; do
   alls+=("$chunk")
   [ "$n" -lt 100 ] && break
   # Пагинация нужна только из-за порядка created_at: свежие nightly лежат на
-  # второй странице. Как только все четыре форка видны в окне, идти дальше незачем.
-  found=$(printf '%s\n' "${alls[@]}" | jq -s -r --arg forks "$FORKS" \
-    '[add[].tag_name] | map(split("-")[0]) | unique | length')
-  [ "$found" -ge 4 ] && { echo "==> all $found forks visible after page $page"; break; }
+  # второй и третьей страницах. Останавливаемся, когда УЖЕ ВИДНЫ все четыре
+  # форка В НУЖНОМ РЕЖИМЕ - считать префиксы без учёта режима нельзя: в окне из
+  # 200 релизов nightly есть только у vanilla и turboquant, prism и atomic лежат
+  # на третьей странице, и ранняя остановка уронила бы ночную сборку.
+  found=$(printf '%s\n' "${alls[@]}" | jq -s -r --arg forks "$FORKS" --arg nightly "$MODE" '
+    add | [.[].tag_name] as $tags
+    | ($forks | split(" ")) as $fs
+    | [ $fs[] | . as $f
+        | (if $nightly == "nightly"
+           then ([ $tags[] | select(test("^"+$f+"-nightly-[0-9a-f]+$"))] | length)
+           else ([ $tags[] | select(test("^"+$f+"-")) | select(test("nightly") | not)] | length)
+           end) ] | map(select(. > 0)) | length')
+  [ "$found" -ge 4 ] && { echo "==> all $found forks have $MODE releases after page $page"; break; }
 done
 rels_json=$(printf '%s\n' "${alls[@]}" | jq -s 'add')
 echo "==> Loaded $(echo "$rels_json" | jq 'length') releases from ${SRC_REPO}"
