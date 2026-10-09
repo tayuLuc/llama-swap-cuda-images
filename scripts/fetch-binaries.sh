@@ -21,7 +21,7 @@ BACKENDS='vanilla|llama\.cpp.*vanilla.*amd64\.tar\.gz$|llama-server
 turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
-imp|imp-cuda13\.4-[a-z]+-amd64\.tar\.gz$|imp-server'
+imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server'
 
 NAMES=$(printf '%s\n' "$BACKENDS" | cut -d'|' -f1)
 
