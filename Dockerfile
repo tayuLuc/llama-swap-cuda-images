@@ -8,10 +8,10 @@ ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
 FROM alpine:3.20 AS fetcher
 RUN apk add --no-cache curl jq bash
 ARG BUILD_MODE=stable
-COPY scripts/fetch-binaries.sh /tmp/fetch-binaries.sh
-RUN chmod +x /tmp/fetch-binaries.sh && \
+COPY scripts/fetch-binaries.sh scripts/select-releases.sh /tmp/
+RUN chmod +x /tmp/fetch-binaries.sh /tmp/select-releases.sh && \
     /tmp/fetch-binaries.sh "${BUILD_MODE}" /tmp/out && \
-    rm -f /tmp/fetch-binaries.sh
+    rm -f /tmp/fetch-binaries.sh /tmp/select-releases.sh
 
 # ============================================================
 # Stage 2 — llama-swap binary source (CPU minimal image;
@@ -31,10 +31,15 @@ LABEL org.opencontainers.image.title="llama-swap CUDA 13.2 image" \
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Runtime deps for the bundled llama.cpp binaries (libgomp = OpenMP).
-# ca-certificates kept for any HTTPS calls at runtime (model downloads etc).
+# Runtime deps for the bundled binaries.
+#  ca-certificates  any HTTPS calls at runtime (model downloads etc)
+#  libgomp1         OpenMP, used by llama.cpp
+#  libcurl4/jpeg    imp links both: without them imp-server dies at exec with
+#                   "error while loading shared libraries: libcurl.so.4". The
+#                   CUDA runtime base ships neither.
 RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends ca-certificates libc6 libgomp1 && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates libc6 libgomp1 libcurl4 libjpeg-turbo8 && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root app user (GID/UID 10001 matches upstream llama-swap image).
@@ -52,6 +57,9 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/vanilla /opt/llama/vani
 COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/turboquant /opt/llama/turboquant
 COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/prism /opt/llama/prism
 COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/atomic /opt/llama/atomic
+# imp is a separate engine, not a llama.cpp fork: imp-server/imp-cli, CUDA 13.4.
+# libcudart.so.13 already exists in the 13.x base, so no CUDA asset is needed.
+COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/imp /opt/llama/imp
 
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).

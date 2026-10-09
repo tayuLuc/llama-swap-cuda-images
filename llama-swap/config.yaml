@@ -1,32 +1,64 @@
-# llama-swap config: route each model to the right llama.cpp fork binary.
-# All four forks are pre-baked into the image at /opt/llama/<fork>/llama-server.
-# Edit the `cmd` path to switch a model to a different fork.
+# llama-swap config.
+#
+# Schema note: llama-swap v262 requires `models` to be a MAP keyed by model ID.
+# The previous list form (`- name: ".*"`) is rejected outright:
+#   yaml: unmarshal errors: cannot unmarshal !!seq into map[string]config.modelMacroConfig
+# The image pins no llama-swap version - FROM ghcr.io/mostlygeek/llama-swap:cpu is
+# a moving tag - so an upgrade invalidated this config with no build failure.
+#
+# There is no regex catch-all any more: `cmd` takes a literal model path, so every
+# model is declared here. `${models_dir}` is a macro resolved from the environment,
+# which keeps one image usable against any host models directory.
+#
+# Backends:
+#   /opt/llama/<fork>/llama-server   llama.cpp forks, GGUF
+#   /opt/llama/imp/imp-server        imp, safetensors checkpoints (NVFP4/FP8)
 
-listen: 0.0.0.0:8080
+macros:
+  models_dir: "${env.MODELS_DIR:-/models}"
 
 models:
-  # Default / general models -> vanilla (upstream, stable)
-  - name: ".*"
-    cmd: "/opt/llama/vanilla/llama-server --model {model} {args}"
-    default_args:
-      n_gpu_layers: 999
+  # ---- imp: safetensors checkpoints -----------------------------------------
+  # imp is not a llama.cpp fork: own binary, own flags, own model formats.
+  "qwen3.8-flash-next-nvfp4":
+    cmd: |
+      /opt/llama/imp/imp-server
+      --model ${models_dir}/qwen3.8-flash-next-nvfp4
+      --port ${PORT}
+      --gpu-layers -1
+    name: "Qwen3.8-Flash-Next NVFP4 (imp)"
 
-  # TurboQuant KV-cache (--cache-type-k turbo3/turbo4) models
-  - name: ".*turboquant.*"
-    cmd: "/opt/llama/turboquant/llama-server --model {model} {args}"
-    default_args:
-      n_gpu_layers: 999
-      cache_type_k: turbo3
-      cache_type_v: turbo3
+  # ---- llama.cpp forks: GGUF ------------------------------------------------
+  "turboquant-kv":
+    cmd: |
+      /opt/llama/turboquant/llama-server
+      --model ${models_dir}/qwen3.8-flash-next-ud-iq4xs.gguf
+      --port ${PORT}
+      -ngl 999
+      --cache-type-k turbo3
+      --cache-type-v turbo3
+    name: "TurboQuant KV-cache"
 
-  # Prism ternary (Q2_0) models
-  - name: ".*prism.*|.*bonsai.*|.*ternary.*"
-    cmd: "/opt/llama/prism/llama-server --model {model} {args}"
-    default_args:
-      n_gpu_layers: 999
+  "prism-ternary":
+    cmd: |
+      /opt/llama/prism/llama-server
+      --model ${models_dir}/qwen3.8-flash-next-ud-iq4xs.gguf
+      --port ${PORT}
+      -ngl 999
+    name: "Prism ternary (Q2_0)"
 
-  # Atomic fork (TheTom + Gemma4 MTP / Qwen3.6 NextN)
-  - name: ".*atomic.*"
-    cmd: "/opt/llama/atomic/llama-server --model {model} {args}"
-    default_args:
-      n_gpu_layers: 999
+  "atomic":
+    cmd: |
+      /opt/llama/atomic/llama-server
+      --model ${models_dir}/qwen3.8-flash-next-ud-iq4xs.gguf
+      --port ${PORT}
+      -ngl 999
+    name: "Atomic fork"
+
+  "default":
+    cmd: |
+      /opt/llama/vanilla/llama-server
+      --model ${models_dir}/qwen3.8-flash-next-ud-iq4xs.gguf
+      --port ${PORT}
+      -ngl 999
+    name: "vanilla llama.cpp (stable)"

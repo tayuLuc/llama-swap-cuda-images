@@ -77,20 +77,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
-          SRC=tayuLuc/yet-another-llama.cpp-cuda-fork
-          rels=$(curl -s -H "Authorization: token ${GH_TOKEN}" "https://api.github.com/repos/$SRC/releases?per_page=100")
-          out=""
-          for fork in vanilla turboquant prism atomic; do
-            if [ "$MODE" = "nightly" ]; then
-              tag=$(echo "$rels" | jq -r --arg f "$fork" '[.[] | select(.tag_name | test("^"+$f+"-nightly-[0-9a-f]+$"))] | sort_by(.published_at) | .[-1].tag_name // empty')
-            else
-              tag=$(echo "$rels" | jq -r --arg f "$fork" '[.[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not)] | sort_by(.published_at) | .[-1].tag_name // empty')
-            fi
-            out="${out}${fork}: ${tag:-MISSING}\n"
-          done
-          echo "packed<<EOF" >> "$GITHUB_OUTPUT"
-          echo -e "$out" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          # Same script the fetcher stage runs inside the image build. The second
+          # copy of this logic that used to live here still read a single page of
+          # releases, which is how the notes and the packed contents drifted apart.
+          bash scripts/select-releases.sh "$MODE" vanilla turboquant prism atomic imp \
+            | awk '{ printf "%s: %s\n", $1, ($2 == "" ? "MISSING" : $2) }' | tee tags.txt
+          {
+            echo "packed<<EOF"
+            cat tags.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
         uses: docker/build-push-action@v7
