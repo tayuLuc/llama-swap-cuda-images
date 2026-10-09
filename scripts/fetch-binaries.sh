@@ -100,9 +100,17 @@ for fork in $FORKS; do
 
   echo "-> $fork: $tag"
   tmp="/tmp/${fork}.tar.gz"
-  curl -sL "$url" -o "$tmp"
+  # -f: без него curl пишет страницу ошибки в файл, и падает уже tar - не здесь.
+  curl -sfL ${AUTH[@]+"${AUTH[@]}"} "$url" -o "$tmp"
   tar -xzf "$tmp" -C "$DEST/"
   rm -f "$tmp"
+  # Проверяем результат, а не факт скачивания: обрыв загрузки на одном форке
+  # иначе всплывает в Dockerfile на отсутствующем COPY, в другом слое и с
+  # другим сообщением. Тут называем форк.
+  if [ ! -x "$DEST/$fork/llama-server" ]; then
+    echo "!! $fork: $tag unpacked without llama-server" >&2
+    missing="$missing $fork"
+  fi
 done
 
 # A quiet skip used to ship an image missing a whole backend: the Dockerfile
