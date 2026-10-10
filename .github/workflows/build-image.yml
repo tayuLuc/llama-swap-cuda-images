@@ -95,7 +95,7 @@ jobs:
           push: true
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
-            CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
+            CUDA_TAG=13.4.2-cudnn-runtime-ubuntu26.04@sha256:44d81ee374c0c00192935010483c5f5fadf47941fe09ead0f0ad48d5c09cc611
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.immutable }}

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG CUDA_TAG=13.2.0-cudnn-runtime-ubuntu24.04
+ARG CUDA_TAG=13.4.2-cudnn-runtime-ubuntu26.04@sha256:44d81ee374c0c00192935010483c5f5fadf47941fe09ead0f0ad48d5c09cc611
 
 # ============================================================
 # Stage 1 — fetch all fork binaries (lightweight Alpine stage,
