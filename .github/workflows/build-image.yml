@@ -1,6 +1,6 @@
 name: Build llama-swap CUDA image
 
-# Builds the llama-swap Docker image bundling ALL 4 llama.cpp forks
+# Builds the llama-swap Docker image bundling ALL 4 llama.cpp forks + imp + Infernix
 # (vanilla + turboquant + prism + atomic) for CUDA 13.2 / RTX 5090 (sm_120).
 #
 # Triggered by:
@@ -80,7 +80,7 @@ jobs:
           # Same script the fetcher stage runs inside the image build. The second
           # copy of this logic that used to live here still read a single page of
           # releases, which is how the notes and the packed contents drifted apart.
-          bash scripts/select-releases.sh "$MODE" vanilla turboquant prism atomic imp \
+          bash scripts/select-releases.sh "$MODE" vanilla turboquant prism atomic imp infernix \
             | awk '{ printf "%s: %s\n", $1, ($2 == "" ? "MISSING" : $2) }' | tee tags.txt
           {
             echo "packed<<EOF"
