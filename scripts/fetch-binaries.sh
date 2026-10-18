@@ -22,7 +22,7 @@ turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
 imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server
-infernix|infernix-cuda-13\.2-infernix-(stable|nightly)-amd64\.tar\.gz$|infernix,infernix-serve'
+infernix|infernix-cuda-13\.2-infernix-(stable|nightly)\-amd64\.tar\.gz$|infernix infernix-serve'
 
 NAMES=$(printf '%s\n' "$BACKENDS" | cut -d'|' -f1)
 
