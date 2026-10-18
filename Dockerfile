@@ -40,7 +40,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
         ca-certificates libc6 libgomp1 libcurl4 libjpeg-turbo8 \
-        libavformat61 libavcodec61 libavutil59 libswscale8 && \
+        libavformat62 libavcodec62 libavutil60 libswscale9 && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root app user (GID/UID 10001 matches upstream llama-swap image).
@@ -68,17 +68,17 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/inf
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
 ENV PATH="/opt/llama/vanilla:${PATH}"
-# ffmpeg ABI bridge: Infernix binaries were built on Ubuntu 24.04 (ffmpeg 6):
-# their NEEDED lines are libav*60/58/7; plucky ships ffmpeg 7 ABI (61/59/8).
-# libav major families bumped once (7: avcodec61, format61, util59; 8: swscale8),
-# and Infernix's own ffmpeg use is demux/decode/encode through stable API —
-# soname symlinks load, smoke-tested in the build lane. Remove when upstream
-# rebuilds on 26.04 (fork-CI lane runs on cuda-13.2-devel-ubuntu24.04).
+# ffmpeg ABI bridge: Infernix binaries were built on Ubuntu 24.04 (ffmpeg 6)
+# with NEEDED libav*60/58/7; the base here is Ubuntu 26.04 (resolute, ffmpeg 8
+# = av*62/60/9). One major bump per family, Infernix's ffmpeg surface is the
+# stable demux/decode/encode API, and its own Dockerfile pins no ffmpeg sonames.
+# SONAME aliases make ld.so bind the new libs. Remove when the fork-CI lane
+# builds on 26.04 or upstream ships ffmpeg-8 binaries.
 RUN cd /usr/lib/x86_64-linux-gnu && \
-    ln -sf libavformat.so.61 libavformat.so.60 && \
-    ln -sf libavcodec.so.61  libavcodec.so.60 && \
-    ln -sf libavutil.so.59   libavutil.so.58 && \
-    ln -sf libswscale.so.8   libswscale.so.7
+    ln -sf libavformat.so.62 libavformat.so.60 && \
+    ln -sf libavcodec.so.62  libavcodec.so.60 && \
+    ln -sf libavutil.so.60   libavutil.so.58 && \
+    ln -sf libswscale.so.9   libswscale.so.7
 
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 
