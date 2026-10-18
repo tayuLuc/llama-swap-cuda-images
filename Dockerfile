@@ -39,7 +39,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                   CUDA runtime base ships neither.
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
-        ca-certificates libc6 libgomp1 libcurl4 libjpeg-turbo8 && \
+        ca-certificates libc6 libgomp1 libcurl4 libjpeg-turbo8 \
+        libavformat60 libavcodec60 libavutil58 libswscale7 && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root app user (GID/UID 10001 matches upstream llama-swap image).
@@ -60,6 +61,9 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/atomic /opt/llama/atomi
 # imp is a separate engine, not a llama.cpp fork: imp-server/imp-cli, CUDA 13.4.
 # libcudart.so.13 already exists in the 13.x base, so no CUDA asset is needed.
 COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/imp /opt/llama/imp
+# Infernix: NInfer-lineage engine (Dense8/NVFP4 reader), not a llama.cpp fork.
+# ffmpeg/curl shared libs installed above; libcudart comes from the CUDA base.
+COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/infernix
 
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
