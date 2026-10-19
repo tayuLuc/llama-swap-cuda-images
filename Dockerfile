@@ -39,8 +39,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                   CUDA runtime base ships neither.
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
-        ca-certificates libc6 libgomp1 libcurl4 libjpeg-turbo8 \
-        libavformat62 libavcodec62 libavutil60 libswscale9 && \
+        ca-certificates libc6 libgomp1 libcurl4 libjpeg-turbo8 curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root app user (GID/UID 10001 matches upstream llama-swap image).
@@ -68,17 +67,26 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/inf
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
 ENV PATH="/opt/llama/vanilla:${PATH}"
-# ffmpeg ABI bridge: Infernix binaries were built on Ubuntu 24.04 (ffmpeg 6)
-# with NEEDED libav*60/58/7; the base here is Ubuntu 26.04 (resolute, ffmpeg 8
-# = av*62/60/9). One major bump per family, Infernix's ffmpeg surface is the
-# stable demux/decode/encode API, and its own Dockerfile pins no ffmpeg sonames.
-# SONAME aliases make ld.so bind the new libs. Remove when the fork-CI lane
-# builds on 26.04 or upstream ships ffmpeg-8 binaries.
-RUN cd /usr/lib/x86_64-linux-gnu && \
-    ln -sf libavformat.so.62 libavformat.so.60 && \
-    ln -sf libavcodec.so.62  libavcodec.so.60 && \
-    ln -sf libavutil.so.60   libavutil.so.58 && \
-    ln -sf libswscale.so.9   libswscale.so.7
+# ffmpeg 7 ABI: all fork binaries (Infernix and the llama.cpp lanes) carry
+# NEEDED libav*60/58/7 with versioned symbols LIBAV*_* — built on Ubuntu 24.04.
+# SONAME aliases are NOT enough: ffmpeg 8 does not export the old version
+# nodes. Install the real noble packages --download-only (they would conflict
+# with the resolute system ffmpeg), unpack them to a private directory and put
+# it on LD_LIBRARY_PATH. -t noble pins the whole dependency closure to noble so
+# every NEEDED soname comes from the same distro the binaries were built on.
+# Drop when the lanes build on 26.04 or upstream ships ffmpeg-8 binaries.
+RUN set -eux; \
+    echo 'deb http://archive.ubuntu.com/ubuntu noble main universe' > /etc/apt/sources.list.d/noble.list; \
+    apt-get update -qq; \
+    mkdir -p /tmp/ff7 /opt/llama/ffmpeg7; \
+    apt-get install -y -d -t noble --no-install-recommends libavcodec60 libavformat60 libavutil58 libswscale7; \
+    cd /var/cache/apt/archives; \
+    for f in ./*.deb; do dpkg -x "$f" /tmp/ff7; done; \
+    find /tmp/ff7/usr/lib/x86_64-linux-gnu -maxdepth 1 -name '*.so.*' -exec mv -t /opt/llama/ffmpeg7/ {} +; \
+    if LD_LIBRARY_PATH=/opt/llama/ffmpeg7 /opt/llama/infernix/infernix-serve --help 2>&1 | grep -q "not found"; then \
+        echo "ffmpeg7 ABI gate failed: infernix-serve still cannot resolve libraries"; exit 1; fi; \
+    rm -rf /tmp/ff7 /var/cache/apt/archives /var/lib/apt/lists/* /etc/apt/sources.list.d/noble.list
+ENV LD_LIBRARY_PATH="/opt/llama/ffmpeg7"
 
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 
