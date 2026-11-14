@@ -22,7 +22,7 @@ turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
 imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server
-infernix|infernix-cuda-13\.2-infernix-stable\-amd64\.tar\.gz$|infernix infernix-serve'
+infernix|infernix-cuda-13\.4-infernix-stable\-amd64\.tar\.gz$|infernix infernix-serve'
 
 NAMES=$(printf '%s\n' "$BACKENDS" | cut -d'|' -f1)
 
@@ -68,7 +68,8 @@ while IFS=' ' read -r name tag; do
   tmp="/tmp/${name}.tar.gz"
   # -f: without it curl writes an error page into the tarball and the failure
   # surfaces at tar, one backend later than it should.
-  curl -sfL "${AUTH[@]}" "$url" -o "$tmp"
+  curl -sfL --retry 3 --retry-all-errors -C - --max-time 900 "${AUTH[@]}" "$url" -o "$tmp" \
+    || { echo "!! $name: download failed" >&2; missing="$missing $name"; rm -f "$tmp"; continue; }
   tar -xzf "$tmp" -C "$DEST/"
   rm -f "$tmp"
 
