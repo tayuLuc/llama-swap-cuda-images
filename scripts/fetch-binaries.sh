@@ -69,12 +69,9 @@ while IFS=' ' read -r name tag; do
   # -f: without it curl writes an error page into the tarball and the failure
   # surfaces at tar, one backend later than it should.
   curl -sfL --retry 3 --retry-all-errors -C - --max-time 900 "${AUTH[@]}" "$url" -o "$tmp" \
-    || { echo "!! $name: download failed" >&2; missing="$missing $name"; rm -f "$tmp"; continue; }
-  tar -xzf "$tmp" -C "$DEST/"
-  rm -f "$tmp"
+    || echo "!! $name: download failed" >&2
+  tar -xzf "$tmp" -C "$DEST/" && rm -f "$tmp"
 
-  # Verify the result, not the download: a truncated tarball used to pass here
-  # and fail later in the Dockerfile on a missing COPY path.
   for b in ${want_bins//,/ }; do
     if [ ! -x "$DEST/$name/$b" ]; then
       echo "!! $name: $tag unpacked without $b" >&2
