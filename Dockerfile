@@ -94,10 +94,15 @@ RUN set -eux; \
     find /tmp/ff7/usr/lib/x86_64-linux-gnu -maxdepth 1 -name '*.so.*' -exec mv -t /opt/llama/ffmpeg7/ {} +; \
     if [ ! -x /opt/llama/infernix/infernix-serve ]; then \
         echo "note: no infernix binaries in this build (optional lane, nightly mode)"; \
-    elif ! LD_LIBRARY_PATH=/opt/llama/ffmpeg7 /opt/llama/infernix/infernix-serve --help >/dev/null 2>&1; then \
-        echo "ffmpeg7 ABI gate failed: infernix-serve exited non-zero on --help"; \
-        LD_LIBRARY_PATH=/opt/llama/ffmpeg7 ldd /opt/llama/infernix/infernix-serve | grep "not found" || true; \
-        exit 1; fi; \
+    else \
+        MISSING=$(LD_LIBRARY_PATH=/opt/llama/ffmpeg7 ldd /opt/llama/infernix/infernix-serve | awk '/not found/{print $1}' | grep -v -x -e 'libcuda.so.1' || true); \
+        if [ -n "$MISSING" ]; then \
+            echo "ffmpeg7 ABI gate failed: unresolved libraries: $MISSING"; \
+            LD_LIBRARY_PATH=/opt/llama/ffmpeg7 ldd /opt/llama/infernix/infernix-serve | grep "not found"; \
+            exit 1; \
+        fi; \
+        echo "ffmpeg7 ABI gate ok (libcuda.so.1 exempt: the driver library is injected by the container runtime, absent at build time)"; \
+    fi; \
     rm -rf /tmp/ff7 /var/cache/apt/archives /var/lib/apt/lists/* /etc/apt/sources.list.d/noble.list
 ENV LD_LIBRARY_PATH="/opt/llama/ffmpeg7"
 
