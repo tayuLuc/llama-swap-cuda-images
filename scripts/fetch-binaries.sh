@@ -22,7 +22,7 @@ turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
 imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server
-infernix|infernix-cuda-13\.2-infernix-stable\-amd64\.tar\.gz$|infernix infernix-serve'
+infernix|infernix-cuda-13\.[0-9]+-infernix-stable-amd64\.tar\.gz$|infernix infernix-serve'
 
 NAMES=$(printf '%s\n' "$BACKENDS" | cut -d'|' -f1)
 
@@ -35,9 +35,11 @@ AUTH=()
 [ -n "$TOKEN" ] && AUTH=(-H "Authorization: token $TOKEN")
 
 # Resolve every backend's tag in one pass; a missing one fails the whole run
-# rather than shipping an image that is quietly one backend short.
+# rather than shipping an image that is quietly one backend short. Exception:
+# lanes listed in OPTIONAL_NIGHTLY (select-releases.sh) may be absent in nightly
+# mode, and get an empty directory below so the Dockerfile COPY still resolves.
 selected=$("$HERE/select-releases.sh" "$MODE" $NAMES) || {
-  echo "!! FAILED: at least one backend has no $MODE release" >&2
+  echo "!! FAILED: at least one required backend has no $MODE release" >&2
   exit 1
 }
 
@@ -49,7 +51,15 @@ rels_json=$(curl -s "${AUTH[@]}" \
 missing=""
 while IFS=' ' read -r name tag; do
   [ -n "$name" ] || continue
-  [ -n "$tag" ] || { missing="$missing $name"; continue; }
+  if [ -z "$tag" ]; then
+    # An optional lane with no tag in this mode: ship the image without it and
+    # leave an empty directory, so COPY resolves and the runtime slot for that
+    # engine is the thing that is missing - named in this line, not in a build
+    # that died on a path.
+    echo "-> $name: no $MODE release, optional lane, shipping image without it"
+    mkdir -p "$DEST/$name"
+    continue
+  fi
 
   row=$(printf '%s\n' "$BACKENDS" | grep "^${name}|" || true)
   pattern=$(printf '%s' "$row" | cut -d'|' -f2)

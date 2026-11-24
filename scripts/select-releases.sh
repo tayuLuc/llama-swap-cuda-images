@@ -7,7 +7,11 @@
 #
 # Usage: select-releases.sh <stable|nightly> <fork> [<fork>...]
 # Output: one "<fork> <tag-or-empty>" line per fork, in the order given.
-# Exit:   1 if any fork has no release for the mode, naming it.
+# Exit:   1 if any REQUIRED fork has no release for the mode, naming it.
+#         Lanes in OPTIONAL_NIGHTLY (default: infernix) may be absent in
+#         nightly mode: Infernix publishes no Linux releases, we build it from
+#         source and tag it stable, so an <fork>-nightly-<sha> tag for it
+#         cannot exist - demanding one made every nightly build die.
 #
 # Why pagination is required: GitHub orders /releases by created_at, and this
 # source repo creates every tag in one batch, so page 1 holds only stable tags -
@@ -19,6 +23,9 @@ MODE="${1:?usage: select-releases.sh <stable|nightly> <fork>...}"
 shift
 FORKS="$*"
 [ -n "$FORKS" ] || { echo "!! no forks given" >&2; exit 1; }
+
+# Lanes that are optional in nightly mode (space separated, env-overridable).
+OPTIONAL_NIGHTLY="${OPTIONAL_NIGHTLY:-infernix}"
 
 # GitHub Actions already exports GITHUB_TOKEN, so CI needs no secret wired up;
 # GH_TOKEN is accepted so a local run can reuse `gh auth token`.
@@ -62,7 +69,13 @@ for page in 1 2 3 4 5 6 7 8 9 10; do
            then ([ $tags[] | select(test("^"+$f+"-nightly-[0-9a-f]+$"))] | length)
            else ([ $tags[] | select(test("^"+$f+"-")) | select(test("nightly") | not)] | length)
            end) ] | map(select(. > 0)) | length')
-  [ "$found" -ge "$(echo "$FORKS" | wc -w)" ] && break
+  # Required count: in nightly mode optional lanes do not count towards the
+  # "every fork is visible" stop condition, they can never become visible.
+  required=$(printf '%s\n' $FORKS | jq -Rs --arg opt "$OPTIONAL_NIGHTLY" --arg mode "$MODE" '
+    split("\n") | map(select(length > 0)) as $fs | ($opt | split(" ")) as $o
+    | (if $mode == "nightly" then ($fs | map(select(. as $f | $o | index($f) | not))) else $fs end)
+    | length')
+  [ "$found" -ge "$required" ] && break
 done
 
 rels_json=$(printf '%s\n' "${alls[@]}" | jq -s 'add')
@@ -79,7 +92,14 @@ for fork in $FORKS; do
        | sort_by(.published_at) | .[-1].tag_name // empty')
   fi
   echo "$fork ${tag:-}"
-  [ -n "$tag" ] || status=1
+  [ -n "$tag" ] && continue
+  if [ "$MODE" = "nightly" ]; then
+    case " $OPTIONAL_NIGHTLY " in *" $fork "*)
+      echo "   $fork: no nightly tag (optional lane in nightly mode)" >&2
+      continue ;;
+    esac
+  fi
+  status=1
 done
 
 # A quiet skip used to ship an image missing a whole backend: the Dockerfile

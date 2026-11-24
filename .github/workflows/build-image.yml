@@ -51,15 +51,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Resolve mode: dispatch input, else schedule => nightly.
+      # Resolve mode. A dispatch with an empty `mode` input used to fall through
+      # to nightly, so a manual run that looked like "stable" in the form (the
+      # form shows the default) landed in the nightly branch, which needs a
+      # nightly tag for every lane - run 293 died exactly there. Now: explicit
+      # input wins, schedule is nightly, a manual dispatch defaults to stable.
       - name: Resolve mode
         id: mode
         run: |
-          if [ -n "${{ github.event.inputs.mode }}" ]; then
-            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
-          else
+          IN="${{ github.event.inputs.mode }}"
+          EV="${{ github.event_name }}"
+          if [ -n "$IN" ]; then
+            echo "mode=$IN" >> "$GITHUB_OUTPUT"
+          elif [ "$EV" = "schedule" ]; then
             echo "mode=nightly" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=stable" >> "$GITHUB_OUTPUT"
           fi
+          echo "resolved mode: input='$IN' event='$EV'"
 
       # Compute immutable tag (shell-expanded date + run id).
       - name: Compute tags
