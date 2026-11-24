@@ -86,6 +86,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
+          export SELECT_ASSETS_FILE="$RUNNER_TEMP/selected-assets.tsv"
           # Same script the fetcher stage runs inside the image build. The second
           # copy of this logic that used to live here still read a single page of
           # releases, which is how the notes and the packed contents drifted apart.
@@ -107,9 +108,15 @@ jobs:
           # body listed infernix-f9c2e42cb3e9 (published 16:06:19Z) - the packed
           # Infernix was still infernix-49893d9cfb45. Key the fetch layer on the
           # selection fingerprint so the cache dies exactly when the selection moves.
-          SHA=$(sha256sum tags.txt | cut -c1-16)
+          # Asset ids and sizes join the fingerprint (SELECT_ASSETS_FILE): the forks
+          # repo republishes a release for an unchanged commit sha - run 163 put an
+          # ubuntu24.04 asset (569667644 B) under infernix-f9c2e42cb3e9, which tags.txt
+          # already carried from run 161's ffmpeg-8 asset (570635562 B) - so tags alone
+          # keep the key identical and buildx serves the stale download layer.
+          SHA=$( { sha256sum tags.txt; [ -s "$SELECT_ASSETS_FILE" ] && sha256sum "$SELECT_ASSETS_FILE"; } | sha256sum | cut -c1-16)
           echo "selection-key=$SHA" >> "$GITHUB_OUTPUT"
-          echo "selection-key=$SHA (fingerprint of the selected release tags)"
+          echo "selection-key=$SHA (fingerprint of the selected release tags and asset identities)"
+          echo "asset identities used:"; cat "$SELECT_ASSETS_FILE" 2>/dev/null || echo "  (none)"
 
       - name: Build and push image
         uses: docker/build-push-action@v7

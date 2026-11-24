@@ -24,6 +24,34 @@ shift
 FORKS="$*"
 [ -n "$FORKS" ] || { echo "!! no forks given" >&2; exit 1; }
 
+# Side channel for the build cache fingerprint. The stdout contract stays
+# "<fork> <tag>" so fetch-binaries.sh keeps parsing it. Why the side channel is
+# needed: the forks repo rebuilds the SAME commit (same tag, same fingerprint)
+# and republishes the release with a DIFFERENT asset - measured 24.11, run 163
+# republished infernix-f9c2e42cb3e9 (an ubuntu24.04 build, asset 569667644 B)
+# over run 161's ffmpeg-8 build (asset 570635562 B) at the same tag. Run 303
+# keyed its fetch layer on tags.txt only, hit the buildx cache and shipped the
+# old asset while its own ABI gate ran on cached layers. Asset id and size make
+# the cache die when upstream content moves under an unchanged tag.
+ASSET_LINES=""
+if [ -n "${SELECT_ASSETS_FILE:-}" ]; then
+  : > "$SELECT_ASSETS_FILE"
+fi
+emit_assets() {
+  # $1 = fork; the asset lines are taken from the release this selection picked,
+  # i.e. the newest release of the mode, which is exactly what the `tag` below
+  # resolves to. Keeping the lookup on published_at (not on the tag string)
+  # avoids re-implementing the tag regex a second time here.
+  [ -n "${SELECT_ASSETS_FILE:-}" ] && [ -n "$1" ] || return 0
+  echo "$rels_json" | jq -r --arg f "$1" --arg nightly "$MODE" '
+      (if $nightly == "nightly"
+       then ([ .[] | select(.tag_name | test("^"+$f+"-nightly-[0-9a-f]+$")) ])
+       else ([ .[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not) ])
+       end)
+      | sort_by(.published_at) | (last // empty) | .assets[]?
+      | "\($f) \(.id) \(.size) \(.updated_at)"' >> "$SELECT_ASSETS_FILE"
+}
+
 # Lanes that are optional in nightly mode (space separated, env-overridable).
 OPTIONAL_NIGHTLY="${OPTIONAL_NIGHTLY:-infernix}"
 
@@ -92,6 +120,7 @@ for fork in $FORKS; do
        | sort_by(.published_at) | .[-1].tag_name // empty')
   fi
   echo "$fork ${tag:-}"
+  emit_assets "$fork"
   [ -n "$tag" ] && continue
   if [ "$MODE" = "nightly" ]; then
     case " $OPTIONAL_NIGHTLY " in *" $fork "*)
