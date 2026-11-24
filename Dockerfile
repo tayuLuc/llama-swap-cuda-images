@@ -94,8 +94,10 @@ RUN set -eux; \
     find /tmp/ff7/usr/lib/x86_64-linux-gnu -maxdepth 1 -name '*.so.*' -exec mv -t /opt/llama/ffmpeg7/ {} +; \
     if [ ! -x /opt/llama/infernix/infernix-serve ]; then \
         echo "note: no infernix binaries in this build (optional lane, nightly mode)"; \
-    elif LD_LIBRARY_PATH=/opt/llama/ffmpeg7 /opt/llama/infernix/infernix-serve --help 2>&1 | grep -q "not found"; then \
-        echo "ffmpeg7 ABI gate failed: infernix-serve still cannot resolve libraries"; exit 1; fi; \
+    elif ! LD_LIBRARY_PATH=/opt/llama/ffmpeg7 /opt/llama/infernix/infernix-serve --help >/dev/null 2>&1; then \
+        echo "ffmpeg7 ABI gate failed: infernix-serve exited non-zero on --help"; \
+        LD_LIBRARY_PATH=/opt/llama/ffmpeg7 ldd /opt/llama/infernix/infernix-serve | grep "not found" || true; \
+        exit 1; fi; \
     rm -rf /tmp/ff7 /var/cache/apt/archives /var/lib/apt/lists/* /etc/apt/sources.list.d/noble.list
 ENV LD_LIBRARY_PATH="/opt/llama/ffmpeg7"
 
