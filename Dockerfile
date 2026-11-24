@@ -8,8 +8,17 @@ ARG CUDA_TAG=13.4.2-cudnn-runtime-ubuntu26.04@sha256:44d81ee374c0c00192935010483
 FROM alpine:3.20 AS fetcher
 RUN apk add --no-cache curl jq bash
 ARG BUILD_MODE=stable
+# SELECTION_KEY is a fingerprint of the release tags this build is supposed to
+# pack, computed on the runner from select-releases.sh. Docker's layer cache keys
+# this RUN on (base, COPYed scripts, BUILD_MODE) only, so without an argument that
+# changes with the selection, a build that selects a newer upstream release ships
+# the PREVIOUS run's downloaded binaries (measured 24.11: two runs, byte-identical
+# linux/amd64 config digest, 31 s apart). Echoing the arg here is what puts it in
+# the cache key; changing it re-runs the fetch, identical selection stays cached.
+ARG SELECTION_KEY=unkeyed
 COPY scripts/fetch-binaries.sh scripts/select-releases.sh /tmp/
-RUN chmod +x /tmp/fetch-binaries.sh /tmp/select-releases.sh && \
+RUN echo "fetch-binaries: mode=${BUILD_MODE} selection-key=${SELECTION_KEY}" && \
+    chmod +x /tmp/fetch-binaries.sh /tmp/select-releases.sh && \
     /tmp/fetch-binaries.sh "${BUILD_MODE}" /tmp/out && \
     rm -f /tmp/fetch-binaries.sh /tmp/select-releases.sh
 

@@ -96,6 +96,20 @@ jobs:
             cat tags.txt
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+          # The fetcher stage's RUN layer is cached by buildx on (base image,
+          # COPYed scripts, BUILD_MODE). Upstream release CONTENT is not part of
+          # that key, so a run that selects a NEWER release reuses the previous
+          # run's downloaded binaries verbatim and the audit body then describes a
+          # selection the image does not contain. Measured on 24.11: run 298
+          # (16:06:38Z -> 16:07:09Z, 31 s, all steps success) published
+          # stable-20261124-45433260900 whose linux/amd64 image config digest
+          # sha256:46deaa9865b5e64... is byte-identical to run 297's, while its
+          # body listed infernix-f9c2e42cb3e9 (published 16:06:19Z) - the packed
+          # Infernix was still infernix-49893d9cfb45. Key the fetch layer on the
+          # selection fingerprint so the cache dies exactly when the selection moves.
+          SHA=$(sha256sum tags.txt | cut -c1-16)
+          echo "selection-key=$SHA" >> "$GITHUB_OUTPUT"
+          echo "selection-key=$SHA (fingerprint of the selected release tags)"
 
       - name: Build and push image
         uses: docker/build-push-action@v7
@@ -104,6 +118,7 @@ jobs:
           push: true
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
+            SELECTION_KEY=${{ steps.tags.outputs.selection-key }}
             CUDA_TAG=13.4.2-cudnn-runtime-ubuntu26.04@sha256:44d81ee374c0c00192935010483c5f5fadf47941fe09ead0f0ad48d5c09cc611
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
