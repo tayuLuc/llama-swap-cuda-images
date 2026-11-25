@@ -26,6 +26,9 @@ on:
         default: stable
   schedule:
     - cron: '17 0 * * *'   # periodic nightly rebuild
+  # Branch PRs build the image (all gates, no push): the ABI/venv gates run on
+  # real fetched binaries, which no local check can do without a GPU base.
+  pull_request:
 
 permissions:
   contents: write     # create git tags / releases for build audit
@@ -90,7 +93,7 @@ jobs:
           # Same script the fetcher stage runs inside the image build. The second
           # copy of this logic that used to live here still read a single page of
           # releases, which is how the notes and the packed contents drifted apart.
-          bash scripts/select-releases.sh "$MODE" vanilla turboquant prism atomic imp infernix \
+          bash scripts/select-releases.sh "$MODE" vanilla turboquant prism atomic imp infernix basalt@jesdga95/basalt \
             | awk '{ printf "%s: %s\n", $1, ($2 == "" ? "MISSING" : $2) }' | tee tags.txt
           {
             echo "packed<<EOF"
@@ -122,7 +125,8 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: true
+          # PR builds prove the gates; only main/schedule runs move tags.
+          push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
             SELECTION_KEY=${{ steps.tags.outputs.selection-key }}
@@ -134,6 +138,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Create audit release (git tag + notes)
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

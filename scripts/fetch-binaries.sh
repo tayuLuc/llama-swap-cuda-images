@@ -16,15 +16,20 @@ DEST="${2:?usage: fetch-binaries.sh <stable|nightly> <dest>}"
 SRC_REPO="${SRC_REPO:-tayuLuc/yet-another-llama.cpp-cuda-fork}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-# name|asset regex|required binaries
+# name|asset regex|required binaries[|repo][|strip-components][|required files]
+# The forks all ship llama-server. imp is a separate engine and ships
+# imp-server/imp-cli under a differently named asset. basalt ships a whole tree
+# (bin/ serve/ tools/ data/ docs/ requirements.txt) under a versioned top
+# directory, from its own repo - hence the strip and repo fields.
 BACKENDS='vanilla|llama\.cpp.*vanilla.*amd64\.tar\.gz$|llama-server
 turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
 imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server
-infernix|infernix-cuda-13\.[0-9]+-infernix-stable-amd64\.tar\.gz$|infernix infernix-serve'
+infernix|infernix-cuda-13\.[0-9]+-infernix-stable-amd64\.tar\.gz$|infernix infernix-serve
+basalt|basalt-v[0-9]+\.[0-9]+\.[0-9]+-linux-x64\.tar\.gz$|bin/basalt bin/basalt-vision|jesdga95/basalt|1|requirements.txt'
 
-NAMES=$(printf '%s\n' "$BACKENDS" | cut -d'|' -f1)
+NAMES=$(printf '%s\n' "$BACKENDS" | awk -F'|' '{ if ($4 != "") print $1"@"$4; else print $1 }')
 
 mkdir -p "$DEST"
 
@@ -43,51 +48,97 @@ selected=$("$HERE/select-releases.sh" "$MODE" $NAMES) || {
   exit 1
 }
 
-# Asset URLs come from the same releases; page 1 holds the tags we just picked
-# because select-releases.sh walks until every backend is visible.
-rels_json=$(curl -s "${AUTH[@]}" \
-  "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100&page=1")
+# Asset URLs come from the release list of each lane's repo, cached per repo in
+# $tmprels. Page 1 holds the tags select-releases.sh picked for the forks repo
+# (it walks pages until every backend is visible, newest-first); cross-repo lanes
+# are selected from their newest non-prerelease, which is on page 1 of their
+# repo - the page walk here is the safety net, not the selector.
+tmprels=$(mktemp -d)
+trap 'rm -rf "$tmprels"' EXIT
+rels_for() {
+  local key
+  key=$(echo "$1" | tr '/@' '__')
+  if [ ! -s "$tmprels/$key" ]; then
+    local out="[]" page n
+    for page in 1 2 3; do
+      local chunk
+      chunk=$(curl -s "${AUTH[@]}" "https://api.github.com/repos/${1}/releases?per_page=100&page=${page}")
+      n=$(echo "$chunk" | jq 'length' 2>/dev/null || echo 0)
+      [ "$n" -eq 0 ] && break
+      out=$(jq -s 'add' <<<"$out$(printf '%s\n' "$chunk")")
+      [ "$n" -lt 100 ] && break
+    done
+    echo "$out" > "$tmprels/$key"
+  fi
+  cat "$tmprels/$key"
+}
 
 missing=""
 while IFS=' ' read -r name tag; do
   [ -n "$name" ] || continue
+  lane="${name%%@*}"
   if [ -z "$tag" ]; then
     # An optional lane with no tag in this mode: ship the image without it and
     # leave an empty directory, so COPY resolves and the runtime slot for that
     # engine is the thing that is missing - named in this line, not in a build
     # that died on a path.
-    echo "-> $name: no $MODE release, optional lane, shipping image without it"
-    mkdir -p "$DEST/$name"
+    echo "-> $lane: no $MODE release, optional lane, shipping image without it"
+    mkdir -p "$DEST/$lane"
+    # The basalt venv stage COPYes requirements.txt unconditionally; a fully
+    # empty lane dir would fail that COPY (and the whole build) in nightly
+    # mode. Drop an empty requirements stub so the venv builds empty and the
+    # basalt gate skips on the missing binary - the empty dir, not a build
+    # error, is what tells the story.
+    [ "$lane" = "basalt" ] && : > "$DEST/$lane/requirements.txt"
     continue
   fi
 
-  row=$(printf '%s\n' "$BACKENDS" | grep "^${name}|" || true)
+  row=$(printf '%s\n' "$BACKENDS" | grep "^${lane}|" || true)
   pattern=$(printf '%s' "$row" | cut -d'|' -f2)
   want_bins=$(printf '%s' "$row" | cut -d'|' -f3)
+  lane_repo=$(printf '%s' "$row" | cut -d'|' -f4)
+  strip=$(printf '%s' "$row" | cut -d'|' -f5)
+  want_files=$(printf '%s' "$row" | cut -d'|' -f6)
+  [ -n "$lane_repo" ] || lane_repo="$SRC_REPO"
 
-  url=$(echo "$rels_json" | jq -r --arg t "$tag" --arg p "$pattern" \
+  url=$(rels_for "$lane_repo" | jq -r --arg t "$tag" --arg p "$pattern" \
     '.[] | select(.tag_name==$t) | .assets[] | select(.name|test($p)) | .browser_download_url' | head -1)
 
   if [ -z "$url" ]; then
-    echo "!! No matching asset for $name at tag=$tag" >&2
-    missing="$missing $name"
+    echo "!! No matching asset for $lane at tag=$tag ($lane_repo)" >&2
+    missing="$missing $lane"
     continue
   fi
 
-  echo "-> $name: $tag"
-  tmp="/tmp/${name}.tar.gz"
+  echo "-> $lane: $tag ($lane_repo)"
+  tmp="/tmp/${lane}.tar.gz"
   # -f: without it curl writes an error page into the tarball and the failure
   # surfaces at tar, one backend later than it should.
   curl -sfL "${AUTH[@]}" "$url" -o "$tmp"
-  tar -xzf "$tmp" -C "$DEST/"
+  if [ -n "$strip" ]; then
+    # basalt packs a versioned top directory (basalt-v0.5.7-linux-x64/); the
+    # image path /opt/llama/basalt is its archive root, so flatten one level.
+    mkdir -p "$DEST/$lane"
+    tar -xzf "$tmp" -C "$DEST/$lane" --strip-components="$strip"
+  else
+    tar -xzf "$tmp" -C "$DEST/"
+  fi
   rm -f "$tmp"
 
   # Verify the result, not the download: a truncated tarball used to pass here
   # and fail later in the Dockerfile on a missing COPY path.
   for b in ${want_bins//,/ }; do
-    if [ ! -x "$DEST/$name/$b" ]; then
-      echo "!! $name: $tag unpacked without $b" >&2
-      missing="$missing $name"
+    if [ ! -x "$DEST/$lane/$b" ]; then
+      echo "!! $lane: $tag unpacked without $b" >&2
+      missing="$missing $lane"
+    fi
+  done
+  # requirements.txt feeds the venv stage in the Dockerfile; a tree without it
+  # fails there as a cryptic uv error, name it here.
+  for f in $want_files; do
+    if [ ! -f "$DEST/$lane/$f" ]; then
+      echo "!! $lane: $tag unpacked without $f" >&2
+      missing="$missing $lane"
     fi
   done
 done <<< "$selected"
