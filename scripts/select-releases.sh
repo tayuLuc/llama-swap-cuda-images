@@ -82,6 +82,8 @@ OPTIONAL_NIGHTLY="${OPTIONAL_NIGHTLY:-infernix}"
 # GH_TOKEN is accepted so a local run can reuse `gh auth token`.
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 AUTH=()
+# ${AUTH[@]+"${AUTH[@]}"}: an empty array under set -u is an unbound variable on
+# bash 3.2 (the macOS shell our probes run) - expand defensively.
 [ -n "$TOKEN" ] && AUTH=(-H "Authorization: token $TOKEN")
 if [ -z "$TOKEN" ]; then
   echo "!! no token: unauthenticated API allows 60 requests/hour per IP," >&2
@@ -112,7 +114,7 @@ fetch_all_pages() {
   local repo="$1" page chunk n
   local out="[]"
   for page in 1 2 3 4 5 6 7 8 9 10; do
-    chunk=$(curl -s "${AUTH[@]}" "https://api.github.com/repos/${repo}/releases?per_page=100&page=$page")
+    chunk=$(curl -s "${AUTH[@]+"${AUTH[@]}"}" "https://api.github.com/repos/${repo}/releases?per_page=100&page=$page")
     if ! echo "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1; then
       echo "!! ${repo}: page ${page}: GitHub did not return an array (rate limit or auth?)" >&2
       echo "$chunk" | head -c 200 >&2
@@ -132,16 +134,17 @@ fetch_all_pages() {
 }
 
 fetch_page() {
-  curl -s "${AUTH[@]}" "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100&page=$1"
+  curl -s "${AUTH[@]+"${AUTH[@]}"}" "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100&page=$1"
 }
 
 alls=()
-# Page walking (the stop condition below) is about the forks repo only: its tags
-# are batch-created, so page 1 alone hides most lanes. Cross-repo lanes (lane@repo)
-# are selected from their own repo and must not inflate "every fork is visible".
-FORKS_SRC=$(printf '%s\n' $FORKS | awk '!/@/' | tr '\n' ' ')
+# Full walk of up to 10 pages, no early stop. The stop condition this replaces
+# counted ANY lane release as visible: a prerelease on page 1 satisfied it, the
+# main loop (which filters prereleases) then found no tag and died status=1
+# while a real release sat on page 2; a lane whose newest release published on
+# a later page got the stale older tag - the run 163 class. Ten GETs per build
+# against an authenticated 5000/h budget is the cheap cure.
 for page in 1 2 3 4 5 6 7 8 9 10; do
-  [ -n "$FORKS_SRC" ] || break
   chunk=$(fetch_page "$page")
   # An unauthenticated rate-limit reply is a JSON object, not an array; counting
   # its keys reported "Loaded 2 releases" and still continued. Fail here.
@@ -155,29 +158,11 @@ for page in 1 2 3 4 5 6 7 8 9 10; do
   [ "$n" -eq 0 ] && break
   alls+=("$chunk")
   [ "$n" -lt 100 ] && break
-  # Stop once every requested fork has a release of THIS mode. Counting prefixes
-  # without the mode is wrong: in the first 200 releases only vanilla and
-  # turboquant have nightlies, prism and atomic appear on page 3.
-  found=$(printf '%s\n' "${alls[@]}" | jq -s -r --arg forks "$FORKS_SRC" --arg nightly "$MODE" '
-    add | [.[].tag_name] as $tags
-    | ($forks | split(" ")) as $fs
-    | [ $fs[] | . as $f
-        | (if $nightly == "nightly"
-           then ([ $tags[] | select(test("^"+$f+"-nightly-[0-9a-f]+$"))] | length)
-           else ([ $tags[] | select(test("^"+$f+"-")) | select(test("nightly") | not)] | length)
-           end) ] | map(select(. > 0)) | length')
-  # Required count: in nightly mode optional lanes do not count towards the
-  # "every fork is visible" stop condition, they can never become visible.
-  required=$(printf '%s\n' $FORKS_SRC | jq -Rs --arg opt "$OPTIONAL_NIGHTLY" --arg mode "$MODE" '
-    split("\n") | map(select(length > 0)) as $fs | ($opt | split(" ")) as $o
-    | (if $mode == "nightly" then ($fs | map(select(. as $f | $o | index($f) | not))) else $fs end)
-    | length')
-  [ "$found" -ge "$required" ] && break
 done
 
 # Cross-repo-only invocations never page the forks repo: alls stays empty, and
 # "${alls[@]}" under set -u dies on bash 3.2 (local probes) - expand defensively.
-rels_json=$(printf '%s\n' "${alls[@]+"${alls[@]}"}" | jq -s 'add // "[]"')
+rels_json=$(printf '%s\n' "${alls[@]+"${alls[@]}"}" | jq -s 'add // []')
 
 status=0
 for fork in $FORKS; do

@@ -46,6 +46,8 @@ echo "==> Fetching mode=$MODE binaries for: $(echo "$NAMES" | tr '\n' ' ')"
 
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 AUTH=()
+# ${AUTH[@]+"${AUTH[@]}"}: an empty array under set -u is an unbound variable on
+# bash 3.2 (the macOS shell our probes run) - expand defensively.
 [ -n "$TOKEN" ] && AUTH=(-H "Authorization: token $TOKEN")
 
 # Resolve every backend's tag in one pass; a missing one fails the whole run
@@ -69,9 +71,12 @@ rels_for() {
   key=$(echo "$1" | tr '/@' '__')
   if [ ! -s "$tmprels/$key" ]; then
     local out="[]" page n
-    for page in 1 2 3; do
+    # 10 pages, mirroring select-releases.sh: a selector that walks to page N
+    # must never pick a tag the fetcher is too short-sighted to find - the
+    # "No matching asset" red lands on a tag the build was told to pack.
+    for page in 1 2 3 4 5 6 7 8 9 10; do
       local chunk
-      chunk=$(curl -s "${AUTH[@]}" "https://api.github.com/repos/${1}/releases?per_page=100&page=${page}")
+      chunk=$(curl -s "${AUTH[@]+"${AUTH[@]}"}" "https://api.github.com/repos/${1}/releases?per_page=100&page=${page}")
       # An unauthenticated rate-limit reply is a JSON object and jq 'length'
       # counts its keys as releases - the class select-releases.sh carries a
       # guard for. Die naming the class; never count keys.
@@ -131,7 +136,7 @@ while IFS=' ' read -r name tag; do
   tmp="/tmp/${lane}.tar.gz"
   # -f: without it curl writes an error page into the tarball and the failure
   # surfaces at tar, one backend later than it should.
-  curl -sfL "${AUTH[@]}" "$url" -o "$tmp"
+  curl -sfL "${AUTH[@]+"${AUTH[@]}"}" "$url" -o "$tmp"
   if [ -n "$strip" ]; then
     # basalt packs a versioned top directory (basalt-v0.5.7-linux-x64/); the
     # image path /opt/llama/basalt is its archive root, so flatten one level.

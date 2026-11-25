@@ -134,7 +134,10 @@ jobs:
           # ubuntu24.04 asset (569667644 B) under infernix-f9c2e42cb3e9, which tags.txt
           # already carried from run 161's ffmpeg-8 asset (570635562 B) - so tags alone
           # keep the key identical and buildx serves the stale download layer.
-          SHA=$( { sha256sum tags.txt; [ -s "$SELECT_ASSETS_FILE" ] && sha256sum "$SELECT_ASSETS_FILE"; } | sha256sum | cut -c1-16)
+                    # "|| true" on the assets leg: an empty assets file makes the [ -s ]
+          # test fail as the brace group's last command, and pipefail+set -e
+          # would kill the step with a bare rc 1 under an unhelpful sha256sum line.
+          SHA=$( { sha256sum tags.txt; { [ -s "$SELECT_ASSETS_FILE" ] && sha256sum "$SELECT_ASSETS_FILE"; } || true; } | sha256sum | cut -c1-16)
           echo "selection-key=$SHA" >> "$GITHUB_OUTPUT"
           echo "selection-key=$SHA (fingerprint of the selected release tags and asset identities)"
           echo "asset identities used:"; cat "$SELECT_ASSETS_FILE" 2>/dev/null || echo "  (none)"
