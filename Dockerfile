@@ -131,11 +131,10 @@ RUN set -eux; \
         fi; \
     done; \
     echo "basalt ABI gate ok (basalt + basalt-vision; libcuda.so.1 exempt)"; \
-    PY=$(readlink -f /opt/venv/bin/python); \
-    ldd "$PY" | awk '/not found/{print $1}' | grep . && { echo "standalone python gate failed: see not-found above"; exit 1; } || true; \
-    "$PY" -c "import sys; print('python', sys.version.split()[0], 'gate ok')"; \
-    "$PY" -c "import numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"; \
-    /opt/venv/bin/python -c "import sys; sys.executable; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
+    ldd /opt/venv/bin/python | awk '/not found/{print $1}' | grep . && { echo "standalone python gate failed: see not-found above"; exit 1; } || true; \
+    /opt/venv/bin/python -c "import sys; print('python', sys.version.split()[0], 'venv gate ok')"; \
+    /opt/venv/bin/python -c "import numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"; \
+    /opt/venv/bin/python -c "import sys; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
 
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
