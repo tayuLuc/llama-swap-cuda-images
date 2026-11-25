@@ -120,7 +120,9 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/inf
 # No --chmod here: exec bits ride in from the tarball; the RUN below chmods
 # bin/ specifically. Blanket 755 on the tree would make JSON, docs and
 # requirements.txt executable - noise for anyone auditing the image.
-COPY --link --from=fetcher --chown=app:app /tmp/out/basalt /opt/llama/basalt
+# --chown numeric: an isolated (--link) layer has no parent filesystem to
+# resolve "app" against, buildkit demands uid:gid (10001 = the app user).
+COPY --link --from=fetcher --chown=10001:10001 /tmp/out/basalt /opt/llama/basalt
 # The venv is COPYed to the author's documented location (.venv at the archive
 # root, which bin/basalt serve uses when present) at the same absolute path it
 # was built at - venvs hardcode paths, this one hardcodes its own. /opt/venv
@@ -129,8 +131,8 @@ COPY --link --from=fetcher --chown=app:app /tmp/out/basalt /opt/llama/basalt
 # bump, and the isolated layers keep everything declared after them (the
 # ffmpeg7 unpack, ENV tail) cache-valid - the gate RUN below is a RUN, it
 # re-runs on content change by design, isolation does not skip verification.
-COPY --link --from=basalt-venv --chown=app:app /opt/uv /opt/uv
-COPY --link --from=basalt-venv --chown=app:app /opt/llama/basalt/.venv /opt/llama/basalt/.venv
+COPY --link --from=basalt-venv --chown=10001:10001 /opt/uv /opt/uv
+COPY --link --from=basalt-venv --chown=10001:10001 /opt/llama/basalt/.venv /opt/llama/basalt/.venv
 # mkdir: nightly ships an empty basalt lane, and COPY of an empty source dir
 # is a documented no-op that does NOT create the destination - the symlink
 # dereferences the directory, so the dir must exist independently of the lane.
