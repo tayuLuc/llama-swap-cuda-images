@@ -6,6 +6,10 @@
 # image actually downloads cannot drift apart.
 #
 # Usage: select-releases.sh <stable|nightly> <fork> [<fork>...]
+# A lane may be "<name>@<owner>/<repo>": releases are then selected from that
+# repo's latest non-prerelase (basalt ships v0.5.7-style tags from its own repo,
+# the forks repo tags are "<fork>-<sha>" batches). Cross-repo lanes have no
+# nightly concept: like OPTIONAL_NIGHTLY lanes, they are skipped in nightly mode.
 # Output: one "<fork> <tag-or-empty>" line per fork, in the order given.
 # Exit:   1 if any REQUIRED fork has no release for the mode, naming it.
 #         Lanes in OPTIONAL_NIGHTLY (default: infernix) may be absent in
@@ -38,18 +42,37 @@ if [ -n "${SELECT_ASSETS_FILE:-}" ]; then
   : > "$SELECT_ASSETS_FILE"
 fi
 emit_assets() {
-  # $1 = fork; the asset lines are taken from the release this selection picked,
+  # $1 = lane; $2 = repo whose release list the asset lines come from (default
+  # SRC_REPO). The asset lines are taken from the release this selection picked,
   # i.e. the newest release of the mode, which is exactly what the `tag` below
   # resolves to. Keeping the lookup on published_at (not on the tag string)
   # avoids re-implementing the tag regex a second time here.
   [ -n "${SELECT_ASSETS_FILE:-}" ] && [ -n "$1" ] || return 0
+  local repo="${2:-$SRC_REPO}"
+  # Local on purpose: the main loop keeps the forks-repo list in the global
+  # rels_json; clobbering it from here would poison the next lane's selection.
+  local rels_json
+  rels_json=$(rels_of "$repo")
   echo "$rels_json" | jq -r --arg f "$1" --arg nightly "$MODE" '
       (if $nightly == "nightly"
        then ([ .[] | select(.tag_name | test("^"+$f+"-nightly-[0-9a-f]+$")) ])
-       else ([ .[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not) ])
+       else ([ .[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not) | select(.prerelease | not) ])
        end)
       | sort_by(.published_at) | (last // empty) | .assets[]?
       | "\($f) \(.id) \(.size) \(.updated_at)"' >> "$SELECT_ASSETS_FILE"
+  # Cross-repo lanes carry plain version tags (v0.5.7), not "<lane>-..." tags:
+  # the fork-prefix regex above matches nothing, select them by recency instead.
+  case "$repo" in
+    "$SRC_REPO") ;;
+    *)
+      echo "$rels_json" | jq -r --arg f "$1" --arg asset_pat "$ASSET_PAT_CROSS" '
+        [ .[] | select(.prerelease | not)
+          | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
+          | select(.assets | any(.name | test($asset_pat))) ]
+        | sort_by(.published_at) | (last // empty) | .assets[]?
+        | "\($f) \(.id) \(.size) \(.updated_at)"' >> "$SELECT_ASSETS_FILE"
+      ;;
+  esac
 }
 
 # Lanes that are optional in nightly mode (space separated, env-overridable).
@@ -59,6 +82,8 @@ OPTIONAL_NIGHTLY="${OPTIONAL_NIGHTLY:-infernix}"
 # GH_TOKEN is accepted so a local run can reuse `gh auth token`.
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 AUTH=()
+# ${AUTH[@]+"${AUTH[@]}"}: an empty array under set -u is an unbound variable on
+# bash 3.2 (the macOS shell our probes run) - expand defensively.
 [ -n "$TOKEN" ] && AUTH=(-H "Authorization: token $TOKEN")
 if [ -z "$TOKEN" ]; then
   echo "!! no token: unauthenticated API allows 60 requests/hour per IP," >&2
@@ -66,12 +91,59 @@ if [ -z "$TOKEN" ]; then
 fi
 
 SRC_REPO="${SRC_REPO:-tayuLuc/yet-another-llama.cpp-cuda-fork}"
+# Loose asset predicate shared between selection and the fetch regex: an
+# upstream packaging rename must fail at selection (tag not found = loud),
+# not between tag and download (tag green, asset missing = red build, late).
+ASSET_PAT_CROSS="${ASSET_PAT_CROSS:-linux-x64\.tar\.gz$}"
+
+# Releases for one repo, cached across the run (cross-repo lanes re-read them).
+RELS_CACHE_DIR=$(mktemp -d)
+trap 'rm -rf "$RELS_CACHE_DIR"' EXIT
+rels_of() {
+  local key cache
+  key=$(echo "$1" | tr '/@' '__')
+  cache="$RELS_CACHE_DIR/$key.json"
+  [ -s "$cache" ] || fetch_all_pages "$1" > "$cache"
+  cat "$cache"
+}
+
+# All pages of a repo's release list. The forks repo needs page walking (tags are
+# created in batches, page 1 = stable only - see header); a small cross-repo lane
+# is covered by its first pages too, and the walk stops on a short page.
+fetch_all_pages() {
+  local repo="$1" page chunk n
+  local out="[]"
+  for page in 1 2 3 4 5 6 7 8 9 10; do
+    chunk=$(curl -s "${AUTH[@]+"${AUTH[@]}"}" "https://api.github.com/repos/${repo}/releases?per_page=100&page=$page")
+    if ! echo "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      echo "!! ${repo}: page ${page}: GitHub did not return an array (rate limit or auth?)" >&2
+      echo "$chunk" | head -c 200 >&2
+      echo >&2
+      exit 1
+    fi
+    n=$(echo "$chunk" | jq 'length')
+    [ "$n" -eq 0 ] && break
+    # Hard-fail: keeping the old accumulation on a jq error silently drops a
+    # page from the dataset the asset fingerprint is computed from - tags.txt
+    # would name a tag whose asset ids are absent, a stale cache key in the
+    # run 163/303 shape. set -e killing the run names the real problem.
+    out=$(jq -s 'add' <<<"$out$(printf '%s\n' "$chunk")")
+    [ "$n" -lt 100 ] && break
+  done
+  echo "$out"
+}
 
 fetch_page() {
-  curl -s "${AUTH[@]}" "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100&page=$1"
+  curl -s "${AUTH[@]+"${AUTH[@]}"}" "https://api.github.com/repos/${SRC_REPO}/releases?per_page=100&page=$1"
 }
 
 alls=()
+# Full walk of up to 10 pages, no early stop. The stop condition this replaces
+# counted ANY lane release as visible: a prerelease on page 1 satisfied it, the
+# main loop (which filters prereleases) then found no tag and died status=1
+# while a real release sat on page 2; a lane whose newest release published on
+# a later page got the stale older tag - the run 163 class. Ten GETs per build
+# against an authenticated 5000/h budget is the cheap cure.
 for page in 1 2 3 4 5 6 7 8 9 10; do
   chunk=$(fetch_page "$page")
   # An unauthenticated rate-limit reply is a JSON object, not an array; counting
@@ -86,45 +158,49 @@ for page in 1 2 3 4 5 6 7 8 9 10; do
   [ "$n" -eq 0 ] && break
   alls+=("$chunk")
   [ "$n" -lt 100 ] && break
-  # Stop once every requested fork has a release of THIS mode. Counting prefixes
-  # without the mode is wrong: in the first 200 releases only vanilla and
-  # turboquant have nightlies, prism and atomic appear on page 3.
-  found=$(printf '%s\n' "${alls[@]}" | jq -s -r --arg forks "$FORKS" --arg nightly "$MODE" '
-    add | [.[].tag_name] as $tags
-    | ($forks | split(" ")) as $fs
-    | [ $fs[] | . as $f
-        | (if $nightly == "nightly"
-           then ([ $tags[] | select(test("^"+$f+"-nightly-[0-9a-f]+$"))] | length)
-           else ([ $tags[] | select(test("^"+$f+"-")) | select(test("nightly") | not)] | length)
-           end) ] | map(select(. > 0)) | length')
-  # Required count: in nightly mode optional lanes do not count towards the
-  # "every fork is visible" stop condition, they can never become visible.
-  required=$(printf '%s\n' $FORKS | jq -Rs --arg opt "$OPTIONAL_NIGHTLY" --arg mode "$MODE" '
-    split("\n") | map(select(length > 0)) as $fs | ($opt | split(" ")) as $o
-    | (if $mode == "nightly" then ($fs | map(select(. as $f | $o | index($f) | not))) else $fs end)
-    | length')
-  [ "$found" -ge "$required" ] && break
 done
 
-rels_json=$(printf '%s\n' "${alls[@]}" | jq -s 'add')
+# Cross-repo-only invocations never page the forks repo: alls stays empty, and
+# "${alls[@]}" under set -u dies on bash 3.2 (local probes) - expand defensively.
+rels_json=$(printf '%s\n' "${alls[@]+"${alls[@]}"}" | jq -s 'add // []')
 
 status=0
 for fork in $FORKS; do
-  if [ "$MODE" = "nightly" ]; then
-    tag=$(echo "$rels_json" | jq -r --arg f "$fork" \
+  lane="${fork%%@*}"
+  repo="$SRC_REPO"
+  [ "$fork" != "$lane" ] && repo="${fork#*@}"
+
+  if [ "$repo" != "$SRC_REPO" ]; then
+    # Cross-repo lane (basalt): their own release train, plain v-tags, no
+    # nightly concept - the newest non-prerelease release is the contract.
+    # Nightly mode: the author's prebuilt archive lags their branch HEADs
+    # anyway, and demanding a nightly tag would kill every nightly build
+    # (the infernix lesson) - image ships without the lane, named on stdout.
+    if [ "$MODE" = "nightly" ]; then
+      echo "   $lane: cross-repo lane, no nightly releases (optional, image ships without it)" >&2
+      echo "$lane "
+      continue
+    fi
+    tag=$(rels_of "$repo" | jq -r --arg asset_pat "$ASSET_PAT_CROSS" '
+      [ .[] | select(.prerelease | not)
+        | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
+        | select(.assets | any(.name | test($asset_pat))) ]
+      | sort_by(.published_at) | (last // empty) | .tag_name')
+  elif [ "$MODE" = "nightly" ]; then
+    tag=$(echo "$rels_json" | jq -r --arg f "$lane" \
       '[.[] | select(.tag_name | test("^"+$f+"-nightly-[0-9a-f]+$"))]
        | sort_by(.published_at) | .[-1].tag_name // empty')
   else
-    tag=$(echo "$rels_json" | jq -r --arg f "$fork" \
-      '[.[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not)]
+    tag=$(echo "$rels_json" | jq -r --arg f "$lane" \
+      '[.[] | select(.tag_name | test("^"+$f+"-")) | select(.tag_name | test("nightly") | not) | select(.prerelease | not)]
        | sort_by(.published_at) | .[-1].tag_name // empty')
   fi
-  echo "$fork ${tag:-}"
-  emit_assets "$fork"
+  echo "$lane ${tag:-}"
+  emit_assets "$lane" "$repo"
   [ -n "$tag" ] && continue
   if [ "$MODE" = "nightly" ]; then
-    case " $OPTIONAL_NIGHTLY " in *" $fork "*)
-      echo "   $fork: no nightly tag (optional lane in nightly mode)" >&2
+    case " $OPTIONAL_NIGHTLY " in *" $lane "*)
+      echo "   $lane: no nightly tag (optional lane in nightly mode)" >&2
       continue ;;
     esac
   fi

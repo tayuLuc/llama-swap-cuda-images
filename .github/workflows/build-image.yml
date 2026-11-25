@@ -1,7 +1,7 @@
 name: Build llama-swap CUDA image
 
 # Builds the llama-swap Docker image bundling ALL 4 llama.cpp forks + imp + Infernix
-# (vanilla + turboquant + prism + atomic) for CUDA 13.2 / RTX 5090 (sm_120).
+# + Basalt (vanilla + turboquant + prism + atomic) for CUDA 13.4 / RTX 5090 (sm_120).
 #
 # Triggered by:
 #   - workflow_dispatch with `mode` (stable|nightly)  — fired from the source
@@ -26,6 +26,9 @@ on:
         default: stable
   schedule:
     - cron: '17 0 * * *'   # periodic nightly rebuild
+  # Branch PRs build the image (all gates, no push): the ABI/venv gates run on
+  # real fetched binaries, which no local check can do without a GPU base.
+  pull_request:
 
 permissions:
   contents: write     # create git tags / releases for build audit
@@ -37,6 +40,16 @@ env:
 jobs:
   build-image:
     runs-on: ubuntu-latest
+    # PRs build BOTH modes: the nightly empty-lane chain (select skip -> fetch
+    # stub -> empty-dir COPY -> gate skip) is exactly the code a stable-only PR
+    # build never exercises, and before this matrix its only coverage was the
+    # 00:17 cron running in production. One empty matrix row for every other
+    # event keeps dispatch/schedule at their resolved single mode.
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ${{ github.event_name == 'pull_request' && fromJSON('["stable", "nightly"]') || fromJSON('[""]') }}
+    name: build-image (${{ matrix.mode || 'auto' }})
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -59,16 +72,21 @@ jobs:
       - name: Resolve mode
         id: mode
         run: |
+          MX="${{ matrix.mode }}"
           IN="${{ github.event.inputs.mode }}"
           EV="${{ github.event_name }}"
-          if [ -n "$IN" ]; then
-            echo "mode=$IN" >> "$GITHUB_OUTPUT"
+          if [ -n "$MX" ]; then
+            # pull_request matrix: both modes, see strategy.
+            M="$MX"
+          elif [ -n "$IN" ]; then
+            M="$IN"
           elif [ "$EV" = "schedule" ]; then
-            echo "mode=nightly" >> "$GITHUB_OUTPUT"
+            M=nightly
           else
-            echo "mode=stable" >> "$GITHUB_OUTPUT"
+            M=stable
           fi
-          echo "resolved mode: input='$IN' event='$EV'"
+          echo "mode=$M" >> "$GITHUB_OUTPUT"
+          echo "resolved mode: matrix='$MX' input='$IN' event='$EV' -> $M"
 
       # Compute immutable tag (shell-expanded date + run id).
       - name: Compute tags
@@ -90,7 +108,10 @@ jobs:
           # Same script the fetcher stage runs inside the image build. The second
           # copy of this logic that used to live here still read a single page of
           # releases, which is how the notes and the packed contents drifted apart.
-          bash scripts/select-releases.sh "$MODE" vanilla turboquant prism atomic imp infernix \
+          # The lane list comes from the fetcher's own table (--print-lanes): a
+          # repo rename edits BACKENDS once, fingerprint and download cannot drift.
+          LANES=$(bash scripts/fetch-binaries.sh --print-lanes | tr '\n' ' ')
+          bash scripts/select-releases.sh "$MODE" $LANES \
             | awk '{ printf "%s: %s\n", $1, ($2 == "" ? "MISSING" : $2) }' | tee tags.txt
           {
             echo "packed<<EOF"
@@ -113,7 +134,10 @@ jobs:
           # ubuntu24.04 asset (569667644 B) under infernix-f9c2e42cb3e9, which tags.txt
           # already carried from run 161's ffmpeg-8 asset (570635562 B) - so tags alone
           # keep the key identical and buildx serves the stale download layer.
-          SHA=$( { sha256sum tags.txt; [ -s "$SELECT_ASSETS_FILE" ] && sha256sum "$SELECT_ASSETS_FILE"; } | sha256sum | cut -c1-16)
+                    # "|| true" on the assets leg: an empty assets file makes the [ -s ]
+          # test fail as the brace group's last command, and pipefail+set -e
+          # would kill the step with a bare rc 1 under an unhelpful sha256sum line.
+          SHA=$( { sha256sum tags.txt; { [ -s "$SELECT_ASSETS_FILE" ] && sha256sum "$SELECT_ASSETS_FILE"; } || true; } | sha256sum | cut -c1-16)
           echo "selection-key=$SHA" >> "$GITHUB_OUTPUT"
           echo "selection-key=$SHA (fingerprint of the selected release tags and asset identities)"
           echo "asset identities used:"; cat "$SELECT_ASSETS_FILE" 2>/dev/null || echo "  (none)"
@@ -122,7 +146,8 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: true
+          # PR builds prove the gates; only main/schedule runs move tags.
+          push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
             SELECTION_KEY=${{ steps.tags.outputs.selection-key }}
@@ -131,9 +156,13 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.immutable }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # PRs read main's cache (cache-from) and write only their own final
+          # layers: a mode=max export per PR matrix job evicts the 10 GB shared
+          # quota, and the next main build re-downloads every release tarball.
+          cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=min' || 'type=gha,mode=max' }}
 
       - name: Create audit release (git tag + notes)
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -146,7 +175,7 @@ jobs:
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
             --title "llama-swap image $TAG" \
-            --notes "CUDA 13.2 llama-swap image (mode=$MODE), all 4 forks packed:
+            --notes "CUDA 13.4 llama-swap image (mode=$MODE), engines packed:
 
           ${{ steps.tags.outputs.packed }}
           Image: ${{ env.IMAGE }}:$TAG" \

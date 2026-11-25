@@ -29,12 +29,51 @@ RUN echo "fetch-binaries: mode=${BUILD_MODE} selection-key=${SELECTION_KEY}" && 
 FROM ghcr.io/mostlygeek/llama-swap:cpu AS llama-swap
 
 # ============================================================
+# Stage 2b — Basalt Python venv (uv-managed standalone CPython).
+#
+# basalt's server is Python (serve/ tree) and bin/basalt serve uses a .venv
+# placed at the archive root when it is there (docs/platforms.md). The venv
+# and the interpreter are built here at their FINAL absolute paths - a venv
+# hardcodes the interpreter path in bin/python symlinks and pyvenv.cfg, so
+# building at /venv and copying elsewhere is the classic broken move.
+#
+# uv python install ships python-build-standalone: a self-contained CPython
+# (openssl/sqlite bundled) built against glibc 2.17, so it runs on this
+# ubuntu base and on a future slimmed base unchanged - no apt python enters
+# the runtime image.
+# Nightly ships an empty basalt lane (stub requirements): the stage then bakes
+# a bare interpreter + empty venv (~40 MB) for a lane that ships no binaries.
+# Accepted knowingly: gating the stage behind a build-arg adds a mode the
+# workflow would have to keep in sync with fetch's OPTIONAL_NIGHTLY.
+# ============================================================
+FROM ghcr.io/astral-sh/uv:0.5.9-python3.13-bookworm-slim@sha256:3c1165f681c3f433fae92b87da9d426282b5b7f10a04409ec3be2ccd28778a65 AS basalt-venv
+ARG PYTHON_VERSION=3.13
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+COPY --from=fetcher /tmp/out/basalt/requirements.txt /tmp/basalt-requirements.txt
+# Quoted heredoc: zero escaping, and the builder does NOT expand $vars - the
+# shell sees them all. ARG PYTHON_VERSION arrives as env; runtime vars
+# ($(...), $1) stay the shell's. Unquoted heredoc would eat the runtime ones.
+RUN <<'EOF'
+set -eux
+uv python install "$PYTHON_VERSION" --no-cache
+PYROOT=$(ls -d /opt/uv/python/cpython-${PYTHON_VERSION}.* | head -1)
+[ -x "$PYROOT/bin/python${PYTHON_VERSION}" ]
+# The venv is built at its FINAL path /opt/llama/basalt/.venv, not at a build
+# address copied sideways: bin/basalt serve resolves .venv/bin/python itself,
+# and whatever path resolution the author's launcher uses, the venv is real at
+# the documented location - pyvenv.cfg sits next to bin/python there.
+uv venv --python "$PYROOT/bin/python${PYTHON_VERSION}" /opt/llama/basalt/.venv
+uv pip install --python /opt/llama/basalt/.venv/bin/python --no-cache-dir -r /tmp/basalt-requirements.txt
+chown -R 10001:10001 /opt/uv /opt/llama
+EOF
+
+# ============================================================
 # Stage 3 — final runtime image
 # ============================================================
 FROM nvidia/cuda:${CUDA_TAG}
 
-LABEL org.opencontainers.image.title="llama-swap CUDA 13.2 image" \
-      org.opencontainers.image.description="llama-swap + 4 llama.cpp CUDA 13.2 forks (vanilla/turboquant/atomic/prism) for RTX 5090 (sm_120), amd64" \
+LABEL org.opencontainers.image.title="llama-swap CUDA 13 image" \
+      org.opencontainers.image.description="llama-swap + 4 llama.cpp CUDA forks (vanilla/turboquant/atomic/prism) + imp + Infernix + Basalt for CUDA 13.4 / RTX 5090 (sm_120), amd64" \
       org.opencontainers.image.source="https://github.com/tayuLuc/llama-swap-cuda-images" \
       org.opencontainers.image.licenses="MIT"
 
@@ -72,6 +111,72 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/imp /opt/llama/imp
 # Infernix: NInfer-lineage engine (Dense8/NVFP4 reader), not a llama.cpp fork.
 # ffmpeg/curl shared libs installed above; libcudart comes from the CUDA base.
 COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/infernix
+
+# Basalt: MoE engine (jesdga95/basalt, author's linux-x64 release archive:
+# bin/ + serve/ + tools/ + data/ + docs/ + requirements.txt), not a llama.cpp
+# fork. bin/basalt serve reads its config (models, port) from basalt_config.json
+# - supplied per deployment via the mounted /swap-config, not baked here.
+# Nightly mode ships an empty dir (cross-repo lane, no nightly releases).
+# No --chmod here: exec bits ride in from the tarball; the RUN below chmods
+# bin/ specifically. Blanket 755 on the tree would make JSON, docs and
+# requirements.txt executable - noise for anyone auditing the image.
+# --chown numeric: an isolated (--link) layer has no parent filesystem to
+# resolve "app" against, buildkit demands uid:gid (10001 = the app user).
+COPY --link --from=fetcher --chown=10001:10001 /tmp/out/basalt /opt/llama/basalt
+# The venv is COPYed to the author's documented location (.venv at the archive
+# root, which bin/basalt serve uses when present) at the same absolute path it
+# was built at - venvs hardcode paths, this one hardcodes its own. /opt/venv
+# symlink keeps build-time shebangs (#! /opt/venv/bin/python) alive.
+# --link on the engine + venv COPYs: their content changes on every selection
+# bump, and the isolated layers keep everything declared after them (the
+# ffmpeg7 unpack, ENV tail) cache-valid - the gate RUN below is a RUN, it
+# re-runs on content change by design, isolation does not skip verification.
+COPY --link --from=basalt-venv --chown=10001:10001 /opt/uv /opt/uv
+COPY --link --from=basalt-venv --chown=10001:10001 /opt/llama/basalt/.venv /opt/llama/basalt/.venv
+# mkdir: nightly ships an empty basalt lane, and COPY of an empty source dir
+# is a documented no-op that does NOT create the destination - the symlink
+# dereferences the directory, so the dir must exist independently of the lane.
+# chmod: exec bits for the engine binaries (the gate checks -x); uv/venv trees
+# keep the modes uv set (python launchers, activate scripts).
+RUN mkdir -p /opt/llama/basalt \
+    && ln -sfn /opt/llama/basalt/.venv /opt/venv \
+    && [ ! -d /opt/llama/basalt/bin ] || chmod 755 /opt/llama/basalt/bin/*
+
+# Basalt gates (same ldd-not---help doctrine as the ffmpeg7 gate below):
+# every NEEDED of the 176 MB engine binary must resolve here, libcuda.so.1
+# exempt (driver library, injected by the container runtime at launch);
+# the standalone interpreter must be self-contained on this base; the venv
+# must import everything serve/ needs (requirements.txt, torch-free by design).
+# Empty lane dir (nightly): the whole gate is skipped with a note, like infernix.
+RUN <<'EOF'
+set -eux
+if [ ! -x /opt/llama/basalt/bin/basalt ]; then
+    echo "note: no basalt binaries in this build (cross-repo lane, nightly mode)"
+    exit 0
+fi
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# No /opt/llama/ffmpeg7 here: basalt's NEEDED (objdump-measured: cudart, cublas,
+# cublasLt, stdc++, gcc_s, m, libc) has no libav*, and the ffmpeg7 layer is
+# unpacked further down this stage - referencing it now would point the gate at
+# a directory that does not exist yet (Inkling review). basalt is CUDA-only.
+# libcuda.so.1 exempt: driver library, injected by the container runtime at
+# launch, absent at build time - the only NEEDED the image cannot provide.
+for B in basalt basalt-vision; do
+    MISSING=$(ldd "/opt/llama/basalt/bin/$B" | awk '/not found/{print $1}' | grep -v -x -e 'libcuda.so.1' || true)
+    if [ -n "$MISSING" ]; then
+        echo "basalt ABI gate failed for $B: unresolved libraries: $MISSING"
+        ldd "/opt/llama/basalt/bin/$B" | grep "not found"
+        exit 1
+    fi
+done
+echo "basalt ABI gate ok (basalt + basalt-vision; libcuda.so.1 exempt)"
+ldd /opt/venv/bin/python | awk '/not found/{print $1}' | grep . && { echo "standalone python gate failed: see not-found above"; exit 1; } || true
+/opt/venv/bin/python -c "import sys; print('python', sys.version.split()[0], 'venv gate ok')"
+# ssl + sqlite3 are the python-build-standalone classics (libssl/libffi not
+# self-contained on a new base); the nine are requirements.txt's runtime set.
+/opt/venv/bin/python -c "import ssl, sqlite3, numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"
+/opt/venv/bin/python -c "import sys; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
+EOF
 
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
