@@ -41,6 +41,10 @@ FROM ghcr.io/mostlygeek/llama-swap:cpu AS llama-swap
 # (openssl/sqlite bundled) built against glibc 2.17, so it runs on this
 # ubuntu base and on a future slimmed base unchanged - no apt python enters
 # the runtime image.
+# Nightly ships an empty basalt lane (stub requirements): the stage then bakes
+# a bare interpreter + empty venv (~40 MB) for a lane that ships no binaries.
+# Accepted knowingly: gating the stage behind a build-arg adds a mode the
+# workflow would have to keep in sync with fetch's OPTIONAL_NIGHTLY.
 # ============================================================
 FROM ghcr.io/astral-sh/uv:0.5.9-python3.13-bookworm-slim@sha256:3c1165f681c3f433fae92b87da9d426282b5b7f10a04409ec3be2ccd28778a65 AS basalt-venv
 ARG PYTHON_VERSION=3.13
@@ -52,10 +56,15 @@ COPY --from=fetcher /tmp/out/basalt/requirements.txt /tmp/basalt-requirements.tx
 RUN <<'EOF'
 set -eux
 uv python install "$PYTHON_VERSION" --no-cache
-PYROOT=$(ls -d /opt/uv/python/cpython-${PYTHON_VERSION}.*)
-uv venv --python "$PYROOT/bin/python${PYTHON_VERSION}" /opt/venv
-uv pip install --python /opt/venv/bin/python --no-cache-dir -r /tmp/basalt-requirements.txt
-chown -R 10001:10001 /opt/uv /opt/venv
+PYROOT=$(ls -d /opt/uv/python/cpython-${PYTHON_VERSION}.* | head -1)
+[ -x "$PYROOT/bin/python${PYTHON_VERSION}" ]
+# The venv is built at its FINAL path /opt/llama/basalt/.venv, not at a build
+# address copied sideways: bin/basalt serve resolves .venv/bin/python itself,
+# and whatever path resolution the author's launcher uses, the venv is real at
+# the documented location - pyvenv.cfg sits next to bin/python there.
+uv venv --python "$PYROOT/bin/python${PYTHON_VERSION}" /opt/llama/basalt/.venv
+uv pip install --python /opt/llama/basalt/.venv/bin/python --no-cache-dir -r /tmp/basalt-requirements.txt
+chown -R 10001:10001 /opt/uv /opt/llama
 EOF
 
 # ============================================================
@@ -108,15 +117,30 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/inf
 # fork. bin/basalt serve reads its config (models, port) from basalt_config.json
 # - supplied per deployment via the mounted /swap-config, not baked here.
 # Nightly mode ships an empty dir (cross-repo lane, no nightly releases).
-COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/basalt /opt/llama/basalt
-# The author's documented venv location = .venv at the archive root, which
-# bin/basalt serve uses when present. /venv symlink: the venv's scripts carry
-# #! shebangs for /opt/venv/bin/python from build time - keep that path alive.
-COPY --from=basalt-venv --chown=app:app --chmod=755 /opt/uv /opt/uv
-COPY --from=basalt-venv --chown=app:app --chmod=755 /opt/venv /opt/venv
-RUN ln -sfn /opt/venv /opt/llama/basalt/.venv
+# No --chmod here: exec bits ride in from the tarball; the RUN below chmods
+# bin/ specifically. Blanket 755 on the tree would make JSON, docs and
+# requirements.txt executable - noise for anyone auditing the image.
+COPY --link --from=fetcher --chown=app:app /tmp/out/basalt /opt/llama/basalt
+# The venv is COPYed to the author's documented location (.venv at the archive
+# root, which bin/basalt serve uses when present) at the same absolute path it
+# was built at - venvs hardcode paths, this one hardcodes its own. /opt/venv
+# symlink keeps build-time shebangs (#! /opt/venv/bin/python) alive.
+# --link on the engine + venv COPYs: their content changes on every selection
+# bump, and the isolated layers keep everything declared after them (the
+# ffmpeg7 unpack, ENV tail) cache-valid - the gate RUN below is a RUN, it
+# re-runs on content change by design, isolation does not skip verification.
+COPY --link --from=basalt-venv --chown=app:app /opt/uv /opt/uv
+COPY --link --from=basalt-venv --chown=app:app /opt/llama/basalt/.venv /opt/llama/basalt/.venv
+# mkdir: nightly ships an empty basalt lane, and COPY of an empty source dir
+# is a documented no-op that does NOT create the destination - the symlink
+# dereferences the directory, so the dir must exist independently of the lane.
+# chmod: exec bits for the engine binaries (the gate checks -x); uv/venv trees
+# keep the modes uv set (python launchers, activate scripts).
+RUN mkdir -p /opt/llama/basalt \
+    && ln -sfn /opt/llama/basalt/.venv /opt/venv \
+    && [ ! -d /opt/llama/basalt/bin ] || chmod 755 /opt/llama/basalt/bin/*
 
-# Basalt gates (same ldd-not---help doctrine as the ffmpeg7 gate above):
+# Basalt gates (same ldd-not---help doctrine as the ffmpeg7 gate below):
 # every NEEDED of the 176 MB engine binary must resolve here, libcuda.so.1
 # exempt (driver library, injected by the container runtime at launch);
 # the standalone interpreter must be self-contained on this base; the venv
@@ -128,7 +152,11 @@ if [ ! -x /opt/llama/basalt/bin/basalt ]; then
     echo "note: no basalt binaries in this build (cross-repo lane, nightly mode)"
     exit 0
 fi
-export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/opt/llama/ffmpeg7${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# No /opt/llama/ffmpeg7 here: basalt's NEEDED (objdump-measured: cudart, cublas,
+# cublasLt, stdc++, gcc_s, m, libc) has no libav*, and the ffmpeg7 layer is
+# unpacked further down this stage - referencing it now would point the gate at
+# a directory that does not exist yet (Inkling review). basalt is CUDA-only.
 # libcuda.so.1 exempt: driver library, injected by the container runtime at
 # launch, absent at build time - the only NEEDED the image cannot provide.
 for B in basalt basalt-vision; do
@@ -142,7 +170,9 @@ done
 echo "basalt ABI gate ok (basalt + basalt-vision; libcuda.so.1 exempt)"
 ldd /opt/venv/bin/python | awk '/not found/{print $1}' | grep . && { echo "standalone python gate failed: see not-found above"; exit 1; } || true
 /opt/venv/bin/python -c "import sys; print('python', sys.version.split()[0], 'venv gate ok')"
-/opt/venv/bin/python -c "import numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"
+# ssl + sqlite3 are the python-build-standalone classics (libssl/libffi not
+# self-contained on a new base); the nine are requirements.txt's runtime set.
+/opt/venv/bin/python -c "import ssl, sqlite3, numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"
 /opt/venv/bin/python -c "import sys; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
 EOF
 

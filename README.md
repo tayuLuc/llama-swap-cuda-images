@@ -16,8 +16,11 @@ and Basalt** pre-built for CUDA 13.4 / RTX 5090 (compute capability 12.0, sm_120
 Blackwell; the release archive (bin/ + serve/ + tools/ + requirements.txt) is fetched from
 **its own repo** (`basalt@jesdga95/basalt` lane, not the forks repo), and its Python server
 needs a venv at the archive root - the image builds one from a uv-managed standalone CPython
-(`/opt/venv`, symlinked to `/opt/llama/basalt/.venv`). No system apt python is installed.
-Config (`basalt_config.json`) is deployment-supplied, not baked in.
+(at `/opt/llama/basalt/.venv`, symlinked to `/opt/venv`). No system apt python is installed.
+Config (`basalt_config.json`) is deployment-supplied, not baked in. The lane is **stable-only**:
+nightly ships it empty with a note (a cross-repo lane has no nightly artifact). Launch it as
+a llama-swap slot command (`bin/basalt serve --config ...`, OpenAI-compatible endpoint) -
+it is not a llama-swap backend plugin, the table row names the binary, not a routable backend.
 
 **Infernix (Wallawalla47/Infernix) is not a llama.cpp fork either**: NInfer-lineage engine,
 reads NVIDIA Dense8 + .ngram volumes directly, ships `infernix` + `infernix-serve` at
@@ -34,10 +37,10 @@ GitHub releases (one release per fork × mode).
 
 ## Image tags (GHCR: `ghcr.io/tayuluc/llama-swap-cuda-images`)
 
-- `stable` / `stable-<date>-<runid>` — all 5 backends built from their **latest releases**.
-- `nightly` / `nightly-<date>-<runid>` — all 5 backends built from **branch HEADs** (freshest commits).
+- `stable` / `stable-<date>-<runid>` — all 7 engines built from their **latest releases**.
+- `nightly` / `nightly-<date>-<runid>` — the forks repo built from **branch HEADs** (freshest commits); lanes with no nightly artifact (`infernix`, `basalt`) ship empty with a note, the image is still tagged.
 
-Both tags contain **all 5 backends**; the difference is the source (release vs branch).
+Both tags contain the same engine roster; the difference is the source (release vs branch).
 
 ## Run
 
@@ -52,13 +55,13 @@ llama-swap serves on `:8080`. Route a model to a specific fork via
 
 ## Requirements
 
-- NVIDIA driver >= 580.13 (CUDA 13.2)
+- NVIDIA driver >= 580.13 (CUDA 13.4; basalt's own floor is R580+)
 - `--gpus all` (or explicit device) at runtime
 
 ## How it is built
 
 `yet-another-llama.cpp-cuda-fork` detects fork updates (release + branch) and
 triggers this workflow via `workflow_dispatch` with `mode=stable|nightly`.
-This repo then downloads all 5 backend binaries of that mode and packs one image.
+This repo then downloads all 7 engine artifacts of that mode and packs one image.
 Each build also cuts an **immutable git tag + release** listing the exact fork
 tags that went into the image (audit trail).

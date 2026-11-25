@@ -11,8 +11,8 @@
 # its own asset pattern and binary list instead of one hardcoded name.
 set -euo pipefail
 
-MODE="${1:?usage: fetch-binaries.sh <stable|nightly> <dest>}"
-DEST="${2:?usage: fetch-binaries.sh <stable|nightly> <dest>}"
+MODE="${1:?usage: fetch-binaries.sh <stable|nightly|--print-lanes> <dest>}"
+DEST="${2:-}"
 SRC_REPO="${SRC_REPO:-tayuLuc/yet-another-llama.cpp-cuda-fork}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -30,6 +30,15 @@ infernix|infernix-cuda-13\.[0-9]+-infernix-stable-amd64\.tar\.gz$|infernix infer
 basalt|basalt-v[0-9]+\.[0-9]+\.[0-9]+-linux-x64\.tar\.gz$|bin/basalt bin/basalt-vision|jesdga95/basalt|1|requirements.txt'
 
 NAMES=$(printf '%s\n' "$BACKENDS" | awk -F'|' '{ if ($4 != "") print $1"@"$4; else print $1 }')
+
+# Single source of truth for the lane list: the workflow's tags step asks this
+# script instead of keeping its own copy (a repo rename edited one list and the
+# fingerprint and the download drifted - the comment in build-image.yml).
+if [ "$MODE" = "--print-lanes" ]; then
+  echo "$NAMES"
+  exit 0
+fi
+[ -n "$DEST" ] || { echo "usage: fetch-binaries.sh <stable|nightly> <dest>" >&2; exit 2; }
 
 mkdir -p "$DEST"
 
@@ -63,7 +72,14 @@ rels_for() {
     for page in 1 2 3; do
       local chunk
       chunk=$(curl -s "${AUTH[@]}" "https://api.github.com/repos/${1}/releases?per_page=100&page=${page}")
-      n=$(echo "$chunk" | jq 'length' 2>/dev/null || echo 0)
+      # An unauthenticated rate-limit reply is a JSON object and jq 'length'
+      # counts its keys as releases - the class select-releases.sh carries a
+      # guard for. Die naming the class; never count keys.
+      if ! echo "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        echo "!! $1: page ${page}: GitHub did not return an array (rate limit or auth?)" >&2
+        exit 1
+      fi
+      n=$(echo "$chunk" | jq 'length')
       [ "$n" -eq 0 ] && break
       out=$(jq -s 'add' <<<"$out$(printf '%s\n' "$chunk")")
       [ "$n" -lt 100 ] && break
@@ -84,11 +100,12 @@ while IFS=' ' read -r name tag; do
     # that died on a path.
     echo "-> $lane: no $MODE release, optional lane, shipping image without it"
     mkdir -p "$DEST/$lane"
-    # The basalt venv stage COPYes requirements.txt unconditionally; a fully
-    # empty lane dir would fail that COPY (and the whole build) in nightly
-    # mode. Drop an empty requirements stub so the venv builds empty and the
-    # basalt gate skips on the missing binary - the empty dir, not a build
-    # error, is what tells the story.
+    # The basalt venv stage COPYes requirements.txt unconditionally, so a fully
+    # empty lane dir fails that COPY (and the build) in nightly. The stub keeps
+    # the dir non-empty - a 0-byte requirements builds an empty venv, and the
+    # basalt gate skips on the missing binary. The dir must also be dereferencable
+    # by the final-stage symlink; the RUN mkdir -p there is the primary fix,
+    # this stub is the belt.
     [ "$lane" = "basalt" ] && : > "$DEST/$lane/requirements.txt"
     continue
   fi

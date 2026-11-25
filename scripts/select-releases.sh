@@ -65,8 +65,10 @@ emit_assets() {
   case "$repo" in
     "$SRC_REPO") ;;
     *)
-      echo "$rels_json" | jq -r --arg f "$1" '
-        [ .[] | select(.prerelease | not) | select(.tag_name | test("nightly|rc|alpha|beta"; "i") | not) ]
+      echo "$rels_json" | jq -r --arg f "$1" --arg asset_pat "$ASSET_PAT_CROSS" '
+        [ .[] | select(.prerelease | not)
+          | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
+          | select(.assets | any(.name | test($asset_pat))) ]
         | sort_by(.published_at) | (last // empty) | .assets[]?
         | "\($f) \(.id) \(.size) \(.updated_at)"' >> "$SELECT_ASSETS_FILE"
       ;;
@@ -87,6 +89,10 @@ if [ -z "$TOKEN" ]; then
 fi
 
 SRC_REPO="${SRC_REPO:-tayuLuc/yet-another-llama.cpp-cuda-fork}"
+# Loose asset predicate shared between selection and the fetch regex: an
+# upstream packaging rename must fail at selection (tag not found = loud),
+# not between tag and download (tag green, asset missing = red build, late).
+ASSET_PAT_CROSS="${ASSET_PAT_CROSS:-linux-x64\.tar\.gz$}"
 
 # Releases for one repo, cached across the run (cross-repo lanes re-read them).
 RELS_CACHE_DIR=$(mktemp -d)
@@ -115,7 +121,11 @@ fetch_all_pages() {
     fi
     n=$(echo "$chunk" | jq 'length')
     [ "$n" -eq 0 ] && break
-    out=$(jq -s 'add' <<<"$out$(printf '%s\n' "$chunk")" 2>/dev/null || echo "$out")
+    # Hard-fail: keeping the old accumulation on a jq error silently drops a
+    # page from the dataset the asset fingerprint is computed from - tags.txt
+    # would name a tag whose asset ids are absent, a stale cache key in the
+    # run 163/303 shape. set -e killing the run names the real problem.
+    out=$(jq -s 'add' <<<"$out$(printf '%s\n' "$chunk")")
     [ "$n" -lt 100 ] && break
   done
   echo "$out"
@@ -186,8 +196,10 @@ for fork in $FORKS; do
       echo "$lane "
       continue
     fi
-    tag=$(rels_of "$repo" | jq -r '
-      [ .[] | select(.prerelease | not) | select(.tag_name | test("nightly|rc|alpha|beta"; "i") | not) ]
+    tag=$(rels_of "$repo" | jq -r --arg asset_pat "$ASSET_PAT_CROSS" '
+      [ .[] | select(.prerelease | not)
+        | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
+        | select(.assets | any(.name | test($asset_pat))) ]
       | sort_by(.published_at) | (last // empty) | .tag_name')
   elif [ "$MODE" = "nightly" ]; then
     tag=$(echo "$rels_json" | jq -r --arg f "$lane" \
