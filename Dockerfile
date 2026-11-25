@@ -46,12 +46,17 @@ FROM ghcr.io/astral-sh/uv:0.5.9-python3.13-bookworm-slim@sha256:3c1165f681c3f433
 ARG PYTHON_VERSION=3.13
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
 COPY --from=fetcher /tmp/out/basalt/requirements.txt /tmp/basalt-requirements.txt
-RUN set -eux; \
-    uv python install "$PYTHON_VERSION" --no-cache; \
-    PYROOT=$(ls -d /opt/uv/python/cpython-${PYTHON_VERSION}.*); \
-    uv venv --python "$PYROOT/bin/python${PYTHON_VERSION}" /opt/venv; \
-    uv pip install --python /opt/venv/bin/python --no-cache-dir -r /tmp/basalt-requirements.txt; \
-    chown -R 10001:10001 /opt/uv /opt/venv
+# Quoted heredoc: zero escaping, and the builder does NOT expand $vars - the
+# shell sees them all. ARG PYTHON_VERSION arrives as env; runtime vars
+# ($(...), $1) stay the shell's. Unquoted heredoc would eat the runtime ones.
+RUN <<'EOF'
+set -eux
+uv python install "$PYTHON_VERSION" --no-cache
+PYROOT=$(ls -d /opt/uv/python/cpython-${PYTHON_VERSION}.*)
+uv venv --python "$PYROOT/bin/python${PYTHON_VERSION}" /opt/venv
+uv pip install --python /opt/venv/bin/python --no-cache-dir -r /tmp/basalt-requirements.txt
+chown -R 10001:10001 /opt/uv /opt/venv
+EOF
 
 # ============================================================
 # Stage 3 — final runtime image
@@ -117,24 +122,29 @@ RUN ln -sfn /opt/venv /opt/llama/basalt/.venv
 # the standalone interpreter must be self-contained on this base; the venv
 # must import everything serve/ needs (requirements.txt, torch-free by design).
 # Empty lane dir (nightly): the whole gate is skipped with a note, like infernix.
-RUN set -eux; \
-    if [ ! -x /opt/llama/basalt/bin/basalt ]; then \
-        echo "note: no basalt binaries in this build (cross-repo lane, nightly mode)"; \
-        exit 0; \
-    fi; \
-    for B in basalt basalt-vision; do \
-        MISSING=$(LD_LIBRARY_PATH="/usr/local/cuda/lib64:/opt/llama/ffmpeg7${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "/opt/llama/basalt/bin/$B" | awk '/not found/{print $1}' | grep -v -x -e 'libcuda.so.1' || true); \
-        if [ -n "$MISSING" ]; then \
-            echo "basalt ABI gate failed for $B: unresolved libraries: $MISSING"; \
-            LD_LIBRARY_PATH="/usr/local/cuda/lib64:/opt/llama/ffmpeg7${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "/opt/llama/basalt/bin/$B" | grep "not found"; \
-            exit 1; \
-        fi; \
-    done; \
-    echo "basalt ABI gate ok (basalt + basalt-vision; libcuda.so.1 exempt)"; \
-    ldd /opt/venv/bin/python | awk '/not found/{print $1}' | grep . && { echo "standalone python gate failed: see not-found above"; exit 1; } || true; \
-    /opt/venv/bin/python -c "import sys; print('python', sys.version.split()[0], 'venv gate ok')"; \
-    /opt/venv/bin/python -c "import numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"; \
-    /opt/venv/bin/python -c "import sys; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
+RUN <<'EOF'
+set -eux
+if [ ! -x /opt/llama/basalt/bin/basalt ]; then
+    echo "note: no basalt binaries in this build (cross-repo lane, nightly mode)"
+    exit 0
+fi
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/opt/llama/ffmpeg7${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# libcuda.so.1 exempt: driver library, injected by the container runtime at
+# launch, absent at build time - the only NEEDED the image cannot provide.
+for B in basalt basalt-vision; do
+    MISSING=$(ldd "/opt/llama/basalt/bin/$B" | awk '/not found/{print $1}' | grep -v -x -e 'libcuda.so.1' || true)
+    if [ -n "$MISSING" ]; then
+        echo "basalt ABI gate failed for $B: unresolved libraries: $MISSING"
+        ldd "/opt/llama/basalt/bin/$B" | grep "not found"
+        exit 1
+    fi
+done
+echo "basalt ABI gate ok (basalt + basalt-vision; libcuda.so.1 exempt)"
+ldd /opt/venv/bin/python | awk '/not found/{print $1}' | grep . && { echo "standalone python gate failed: see not-found above"; exit 1; } || true
+/opt/venv/bin/python -c "import sys; print('python', sys.version.split()[0], 'venv gate ok')"
+/opt/venv/bin/python -c "import numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"
+/opt/venv/bin/python -c "import sys; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
+EOF
 
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
