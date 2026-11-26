@@ -173,11 +173,22 @@ for fork in $FORKS; do
   if [ "$repo" != "$SRC_REPO" ]; then
     # Cross-repo lane (basalt): their own release train, plain v-tags, no
     # nightly concept - the newest non-prerelease release is the contract.
-    # Nightly mode: the author's prebuilt archive lags their branch HEADs
-    # anyway, and demanding a nightly tag would kill every nightly build
-    # (the infernix lesson) - image ships without the lane, named on stdout.
+    # Nightly mode: a cross-repo lane gets its nightly in OUR builder
+    # (basalt: the author ships tags only, our builder repo turns the tracked
+    # branch HEAD into a <lane>-nightly-<sha> release). Try SRC_REPO first;
+    # no such release means the lane ships empty with a note, the stable
+    # source stays the author's repo (the infernix lesson: demanding a
+    # nightly tag would kill every nightly build).
     if [ "$MODE" = "nightly" ]; then
-      echo "   $lane: cross-repo lane, no nightly releases (optional, image ships without it)" >&2
+      tag=$(echo "$rels_json" | jq -r --arg f "$lane" \
+        '[.[] | select(.tag_name | test("^"+$f+"-nightly-[0-9a-f]+$"))]
+         | sort_by(.published_at) | .[-1].tag_name // empty')
+      if [ -n "$tag" ]; then
+        echo "$lane $tag"
+        emit_assets "$lane" "$SRC_REPO"
+        continue
+      fi
+      echo "   $lane: cross-repo lane, no builder nightly release (optional, image ships without it)" >&2
       echo "$lane "
       continue
     fi

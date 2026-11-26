@@ -20,14 +20,18 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # The forks all ship llama-server. imp is a separate engine and ships
 # imp-server/imp-cli under a differently named asset. basalt ships a whole tree
 # (bin/ serve/ tools/ data/ docs/ requirements.txt) under a versioned top
-# directory, from its own repo - hence the strip and repo fields.
+# directory, from its own repo - hence the strip and repo fields. The basalt
+# asset pattern is pipe-free (the table field separator is a pipe): a loose
+# "basalt*.tar.gz" is exact here - stable ships basalt-vX.Y.Z-linux-x64, the
+# builder lane ships llama.cpp-cuda-13.2-basalt-nightly-amd64, the author's
+# Windows archives are .zip and never match.
 BACKENDS='vanilla|llama\.cpp.*vanilla.*amd64\.tar\.gz$|llama-server
 turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
 imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server
 infernix|infernix-cuda-13\.[0-9]+-infernix-stable-amd64\.tar\.gz$|infernix infernix-serve
-basalt|basalt-v[0-9]+\.[0-9]+\.[0-9]+-linux-x64\.tar\.gz$|bin/basalt bin/basalt-vision|jesdga95/basalt|1|requirements.txt'
+basalt|basalt.*\.tar\.gz$|bin/basalt bin/basalt-vision|jesdga95/basalt|1|requirements.txt|builder'
 
 NAMES=$(printf '%s\n' "$BACKENDS" | awk -F'|' '{ if ($4 != "") print $1"@"$4; else print $1 }')
 
@@ -121,7 +125,14 @@ while IFS=' ' read -r name tag; do
   lane_repo=$(printf '%s' "$row" | cut -d'|' -f4)
   strip=$(printf '%s' "$row" | cut -d'|' -f5)
   want_files=$(printf '%s' "$row" | cut -d'|' -f6)
+  nightly_repo=$(printf '%s' "$row" | cut -d'|' -f7)
   [ -n "$lane_repo" ] || lane_repo="$SRC_REPO"
+  # Field 7 "builder": a cross-repo lane whose nightly lives in OUR builder
+  # repo (basalt-nightly-<sha>), selected by select-releases.sh the same way
+  # as any SRC lane. Stable keeps the author's repo (field 4).
+  if [ "$MODE" = "nightly" ] && [ "$nightly_repo" = "builder" ]; then
+    lane_repo="$SRC_REPO"
+  fi
 
   url=$(rels_for "$lane_repo" | jq -r --arg t "$tag" --arg p "$pattern" \
     '.[] | select(.tag_name==$t) | .assets[] | select(.name|test($p)) | .browser_download_url' | head -1)
