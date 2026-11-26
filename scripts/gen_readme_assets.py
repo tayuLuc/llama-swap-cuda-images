@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Generate hero + pipeline SVGs (dark/light) with embedded Inter for the README."""
-import base64
+"""Generate hero + pipeline SVGs (dark/light) for the README, system font stack, no binaries in repo."""
 from pathlib import Path
 
 HERE = Path(__file__).parent
-OUT = HERE.parent.parent / "assets"
+OUT = HERE.parent / "assets"
 OUT.mkdir(exist_ok=True)
 
-F500 = base64.b64encode((HERE / "fonts/inter-500.woff2").read_bytes()).decode()
-F800 = base64.b64encode((HERE / "fonts/inter-800.woff2").read_bytes()).decode()
 
 T = {
     "dark": dict(bg="none", fg="#e6edf3", dim="#8b949e", chip="#21262d", chipln="#30363d",
@@ -18,13 +15,9 @@ T = {
 }
 
 def font_css():
-    return (
-        "@font-face{font-family:'I';src:url(data:font/woff2;base64,%s) format('woff2');"
-        "font-weight:500;font-style:normal}"
-        "@font-face{font-family:'I';src:url(data:font/woff2;base64,%s) format('woff2');"
-        "font-weight:800;font-style:normal}"
-        "text{font-family:'I',sans-serif}" % (F500, F800)
-    )
+    # No embedded fonts: GitHub renders <img> SVGs with the viewer's system UI
+    # font, which is exactly the stack below. The repo carries no binaries.
+    return ("text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}")
 
 def chip(x, y, w, label, th, fill=None, stroke=None, fg=None, size=15, weight=500):
     f = fill or th["chip"]
