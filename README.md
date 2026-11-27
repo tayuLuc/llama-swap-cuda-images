@@ -3,11 +3,6 @@
   <img alt="llama-swap CUDA — seven CUDA 13.4 engines, one image, built nightly for sm_120" src="assets/hero-light.svg">
 </picture>
 
-[![stable release](https://img.shields.io/github/v/release/tayuLuc/llama-swap-cuda-images?label=stable&color=green)](https://github.com/tayuLuc/llama-swap-cuda-images/releases)
-[![CUDA 13.4](https://img.shields.io/badge/CUDA-13.4-76b900)](#how-it-is-built)
-[![sm_120](https://img.shields.io/badge/RTX_5090-sm__120-blue)](#how-it-is-built)
-[![linux/amd64](https://img.shields.io/badge/linux-amd64-informational)](#quick-start)
-
 Seven CUDA 13.4 inference engines for Blackwell (RTX 5090, sm_120), compiled by CI, packed into one image, republished on every upstream release **and** every upstream branch move. You `docker pull`, mount your models, and route any model to any engine from a YAML file.
 
 ```bash
