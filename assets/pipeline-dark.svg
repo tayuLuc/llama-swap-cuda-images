@@ -1,20 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 330" width="800" height="330"><style>text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}</style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 344" width="800" height="344"><style>text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}</style>
 <line x1="0" y1="0" x2="0" y2="0" stroke="#8b949e" stroke-width="2" marker-end="url(#arrdark)"/><defs><marker id="arrdark" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker></defs>
-<text x="20" y="30" font-size="15" font-weight="800" fill="#e6edf3">7 upstreams</text>
-<rect x="20" y="46" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="68" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">vanilla</text>
-<rect x="20" y="84" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="106" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">turboquant</text>
-<rect x="20" y="122" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="144" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">prism</text>
-<rect x="20" y="160" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="182" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">atomic</text>
-<rect x="20" y="198" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="220" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">imp</text>
-<rect x="20" y="236" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="258" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">infernix</text>
-<rect x="20" y="274" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="296" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">basalt</text>
+<text x="20" y="26" font-size="15" font-weight="800" fill="#e6edf3">8 upstreams</text>
+<rect x="20" y="40" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="62" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">vanilla</text>
+<rect x="20" y="74" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="96" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">turboquant</text>
+<rect x="20" y="108" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="130" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">prism</text>
+<rect x="20" y="142" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="164" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">atomic</text>
+<rect x="20" y="176" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="198" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">imp</text>
+<rect x="20" y="210" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="232" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">infernix</text>
+<rect x="20" y="244" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="266" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">basalt</text>
+<rect x="20" y="278" width="130" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="85.0" y="300" text-anchor="middle" font-size="13" font-weight="500" fill="#e6edf3">unsloth</text>
 <rect x="240" y="90" width="190" height="34" rx="17" fill="#21262d" stroke="#58a6ff" stroke-width="1.2"/><text x="335.0" y="112" text-anchor="middle" font-size="15" font-weight="800" fill="#58a6ff">builder lanes</text>
 <text x="240" y="150" font-size="13" font-weight="500" fill="#8b949e">stable = last release tag</text>
 <text x="240" y="170" font-size="13" font-weight="500" fill="#8b949e">nightly = branch HEAD</text>
 <text x="240" y="190" font-size="13" font-weight="500" fill="#d29922">dedup: nightly == stable: skip</text>
 <text x="240" y="210" font-size="13" font-weight="500" fill="#d29922">moving-tag lanes: nightly_always</text>
-<line x1="160" y1="170" x2="236" y2="110" stroke="#8b949e" stroke-width="2" marker-end="url(#arrdark)"/><defs><marker id="arrdark" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker></defs>
-<line x1="160" y1="170" x2="236" y2="130" stroke="#8b949e" stroke-width="2" marker-end="url(#arrdark)"/><defs><marker id="arrdark" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker></defs>
+<line x1="160" y1="176" x2="236" y2="110" stroke="#8b949e" stroke-width="2" marker-end="url(#arrdark)"/><defs><marker id="arrdark" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker></defs>
+<line x1="160" y1="176" x2="236" y2="130" stroke="#8b949e" stroke-width="2" marker-end="url(#arrdark)"/><defs><marker id="arrdark" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker></defs>
 <rect x="520" y="100" width="200" height="34" rx="17" fill="#21262d" stroke="#3fb950" stroke-width="1.2"/><text x="620.0" y="122" text-anchor="middle" font-size="15" font-weight="800" fill="#3fb950">:stable  +  :nightly</text>
 <text x="520" y="160" font-size="13" font-weight="500" fill="#8b949e">immutable twin per build:</text>
 <text x="520" y="180" font-size="13" font-weight="500" fill="#8b949e">stable-20261126-4580237…</text>

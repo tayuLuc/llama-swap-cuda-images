@@ -1,9 +1,9 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
-  <img alt="llama-swap CUDA — seven CUDA 13.4 engines, one image, built nightly for sm_120" src="assets/hero-light.svg">
+  <img alt="llama-swap CUDA — eight CUDA 13.4 engines, one image, built nightly for sm_120" src="assets/hero-light.svg">
 </picture>
 
-Seven CUDA 13.4 inference engines for Blackwell (RTX 5090, sm_120), compiled by CI, packed into one image, republished on every upstream release **and** every upstream branch move. You `docker pull`, mount your models, and route any model to any engine from a YAML file.
+Eight CUDA 13.4 inference engines for Blackwell (RTX 5090, sm_120), compiled by CI (or by their author, for the pr-set lane), packed into one image, republished on every upstream release **and** every upstream branch move. You `docker pull`, mount your models, and route any model to any engine from a YAML file.
 
 ```bash
 docker run --gpus all -p 8080:8080 -v /path/to/models:/models \
@@ -21,7 +21,7 @@ prose 320 tok/s  ·  repetition 471 tok/s  ·  cold slot boot 8.5 s  ·  contain
 
 | | |
 |---|---|
-| [The seven](#the-seven-engines) | what ships, and which two are not llama.cpp at all |
+| [The eight](#the-eight-engines) | what ships, and which three are not llama.cpp at all |
 | [Stable vs nightly](#stable-vs-nightly-the-honest-pipeline) | what each alias really contains |
 | [Audit trail](#the-audit-trail) | which exact upstream commit is in the image you pulled |
 | [Before → After](#before--after) | building this stack by hand |
@@ -30,11 +30,11 @@ prose 320 tok/s  ·  repetition 471 tok/s  ·  cold slot boot 8.5 s  ·  contain
 
 ---
 
-## The seven engines
+## The eight engines
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/pipeline-dark.svg">
-  <img alt="Pipeline: seven upstreams flow through builder lanes into :stable and :nightly image tags, then into llama-swap slots" src="assets/pipeline-light.svg">
+  <img alt="Pipeline: eight upstreams flow through builder lanes into :stable and :nightly image tags, then into llama-swap slots" src="assets/pipeline-light.svg">
 </picture>
 
 | Engine | What it is | Binary in image |
@@ -46,8 +46,9 @@ prose 320 tok/s  ·  repetition 471 tok/s  ·  cold slot boot 8.5 s  ·  contain
 | **imp** | a separate engine: safetensors NVFP4/FP8 checkpoints, its own flags | `/opt/llama/imp/imp-server` |
 | **infernix** | NInfer-lineage engine: reads NVIDIA Dense8 and `.ngram` volumes directly | `/opt/llama/infernix/infernix-serve` |
 | **basalt** | a CUDA 13 MoE engine for Blackwell with speculative decoding — 470-570 tok/s measured on Inkling-2-Mini (26.11.2026) | `/opt/llama/basalt/bin/basalt` |
+| **unsloth** | Unsloth's pr-set: daily llama.cpp HEAD with a pinned set of not-yet-merged PRs (Inkling 2 CUDA fusions, QAT sampling defaults) — author's prebuilt CUDA 13 bundle, no compile on our side | `/opt/llama/unsloth/llama-server` |
 
-**Two of the seven are not llama.cpp forks** (green border in the hero): basalt is a MoE engine whose Python server needs a venv — the image builds one from a uv-managed CPython 3.13, no system apt python is installed anywhere in it. infernix speaks NVIDIA's own model formats. They launch as llama-swap slot commands, not as backend plugins.
+**Three of the eight are not llama.cpp forks** (green border in the hero): basalt is a MoE engine whose Python server needs a venv — the image builds one from a uv-managed CPython 3.13, no system apt python is installed anywhere in it. infernix speaks NVIDIA's own model formats. They launch as llama-swap slot commands, not as backend plugins.
 
 Routing is one file. Every model declared in `llama-swap/config.yaml` maps to an engine, and `${models_dir}` resolves from the environment so the same image works against any host models directory:
 
@@ -88,9 +89,9 @@ Rollback is a `docker pull` of any twin, not a rebuild.
 
 | | building this by hand | this image |
 |---|---|---|
-| 7 CUDA 13.4 engines for sm_120 | 7 CUDA compiles, one Python venv, an ffmpeg build — days | one `docker pull` |
+| 8 CUDA 13.4 engines for sm_120 | 8 CUDA compiles, one Python venv, an ffmpeg build — days | one `docker pull` |
 | upstream ships a fix | re-compile, re-test, repeat next week | `stable` moves on its own, cron 00:17Z |
-| "what is in prod?" | "I think v0.5.7? built from master? on Thursday?" | the tag names its run id; the release lists all seven engines |
+| "what is in prod?" | "I think v0.5.7? built from master? on Thursday?" | the tag names its run id; the release lists every engine inside |
 | bad build | bisect blind | pull yesterday's immutable twin |
 | new Blackwell engine | start from its README and suffer | add a lane in the builder, everything downstream is automatic |
 
@@ -142,7 +143,7 @@ docker run --gpus all -p 8080:8080 \
 
 ## How it is built
 
-The binaries are compiled in [`yet-another-llama.cpp-cuda-fork`](https://github.com/tayuLuc/yet-another-llama.cpp-cuda-fork) — one builder lane per engine (stable = latest release tag, nightly = branch HEAD, the dedup rules above). On each lane change it dispatches this repo's workflow with `mode=stable|nightly`; this repo fetches the seven artifacts of that mode and packs one image Repo layout: `Dockerfile` (multi-stage: fetch → venv → pack), `scripts/select-releases.sh` (which release goes into which mode), `scripts/fetch-binaries.sh` (per-lane download), `llama-swap/config.yaml` (reference config with every engine routed).
+The binaries are compiled in [`yet-another-llama.cpp-cuda-fork`](https://github.com/tayuLuc/yet-another-llama.cpp-cuda-fork) — one builder lane per engine (stable = latest release tag, nightly = branch HEAD, the dedup rules above). On each lane change it dispatches this repo's workflow with `mode=stable|nightly`; this repo fetches the eight artifacts of that mode and packs one image. The unsloth lane is the exception: its release train is the author's (daily prebuilt HEAD builds), so the builder never compiles it. Repo layout: `Dockerfile` (multi-stage: fetch → venv → pack), `scripts/select-releases.sh` (which release goes into which mode), `scripts/fetch-binaries.sh` (per-lane download), `llama-swap/config.yaml` (reference config with every engine routed).
 
 ---
 

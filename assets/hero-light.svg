@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 250" width="800" height="250"><style>text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}</style>
 <text x="20" y="62" font-size="44" font-weight="800" fill="#1f2328">llama-swap <tspan fill="#0969da">CUDA</tspan></text>
-<text x="21" y="96" font-size="17" font-weight="500" fill="#59636e">seven CUDA 13.4 engines · one image · built nightly for sm_120</text>
-<rect x="20" y="124" width="96" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="68.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">vanilla</text>
-<rect x="128" y="124" width="120" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="188.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">turboquant</text>
-<rect x="268" y="124" width="80" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="308.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">prism</text>
-<rect x="360" y="124" width="80" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="400.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">atomic</text>
-<rect x="452" y="124" width="96" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="500.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">imp</text>
-<rect x="560" y="124" width="108" height="34" rx="17" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.2"/><text x="614.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1a7f37">infernix</text>
-<rect x="680" y="124" width="100" height="34" rx="17" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.2"/><text x="730.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1a7f37">basalt</text>
+<text x="21" y="96" font-size="17" font-weight="500" fill="#59636e">eight CUDA 13.4 engines · one image · built nightly for sm_120</text>
+<rect x="16" y="124" width="88" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="60.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">vanilla</text>
+<rect x="112" y="124" width="104" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="164.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">turboquant</text>
+<rect x="224" y="124" width="72" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="260.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">prism</text>
+<rect x="304" y="124" width="72" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="340.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">atomic</text>
+<rect x="384" y="124" width="60" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="414.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">imp</text>
+<rect x="452" y="124" width="88" height="34" rx="17" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.2"/><text x="496.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1a7f37">infernix</text>
+<rect x="548" y="124" width="92" height="34" rx="17" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.2"/><text x="594.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1a7f37">basalt</text>
+<rect x="648" y="124" width="92" height="34" rx="17" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.2"/><text x="694.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#1f2328">unsloth</text>
 <text x="20" y="196" font-size="13" font-weight="500" fill="#59636e">green border = not a llama.cpp fork: MoE engine + NInfer-lineage engine</text>
 <text x="20" y="232" font-size="21" font-weight="800" fill="#1a7f37">7.7 GB</text>
 <text x="24" y="248" font-size="13" font-weight="500" fill="#59636e">image</text>

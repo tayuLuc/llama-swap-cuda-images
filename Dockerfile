@@ -111,6 +111,11 @@ COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/imp /opt/llama/imp
 # Infernix: NInfer-lineage engine (Dense8/NVFP4 reader), not a llama.cpp fork.
 # ffmpeg/curl shared libs installed above; libcudart comes from the CUDA base.
 COPY --from=fetcher --chown=app:app --chmod=755 /tmp/out/infernix /opt/llama/infernix
+# Unsloth's llama.cpp pr-set (daily HEAD + pinned unmerged PRs, author's own
+# prebuilt CUDA 13 bundle - no builder compile). --link: their release train is
+# daily, the isolated layer keeps every later layer cache-valid on content
+# change. Numeric chown: --link layers have no parent fs to resolve "app".
+COPY --link --from=fetcher --chown=10001:10001 --chmod=755 /tmp/out/unsloth /opt/llama/unsloth
 
 # Basalt: MoE engine (jesdga95/basalt, author's linux-x64 release archive:
 # bin/ + serve/ + tools/ + data/ + docs/ + requirements.txt), not a llama.cpp
@@ -177,6 +182,28 @@ ldd /opt/venv/bin/python | awk '/not found/{print $1}' | grep . && { echo "stand
 /opt/venv/bin/python -c "import ssl, sqlite3, numpy, jinja2, markupsafe, regex, yaml, tqdm, PIL, pypdf, psutil; print('basalt venv imports ok')"
 /opt/venv/bin/python -c "import sys; assert sys.version_info[:2] >= (3, 10), 'serve/ needs py>=3.10'"
 EOF
+
+# Unsloth ABI gate (same doctrine as the basalt gate): every NEEDED of the
+# author's prebuilt must resolve on THIS base - we ship their binary without
+# compiling it, so the image is the first place linkage can be checked.
+# -newer bundle: CUDA static, glibc floor 2.4 (objdump-measured 27.11), no
+# libav* NEEDED (ffmpeg statically bundled), so it runs before the ffmpeg7
+# unpack. libcuda.so.1 exempt: driver library, injected at launch.
+# Empty lane dir: COPY of an empty dir is a no-op - mkdir, gate skips with a
+# note (basalt pattern).
+RUN set -eux; \
+    mkdir -p /opt/llama/unsloth; \
+    if [ ! -x /opt/llama/unsloth/llama-server ]; then \
+        echo "note: no unsloth binaries in this build (cross-repo lane, no release this mode)"; \
+    else \
+        MISSING=$(LD_LIBRARY_PATH=/usr/local/cuda/lib64 ldd /opt/llama/unsloth/llama-server | awk '/not found/{print $1}' | grep -v -x -e 'libcuda.so.1' || true); \
+        if [ -n "$MISSING" ]; then \
+            echo "unsloth ABI gate failed: unresolved libraries: $MISSING"; \
+            LD_LIBRARY_PATH=/usr/local/cuda/lib64 ldd /opt/llama/unsloth/llama-server | grep "not found"; \
+            exit 1; \
+        fi; \
+        echo "unsloth ABI gate ok"; \
+    fi
 
 # vanilla is the default llama-server on PATH.
 # CUDA runtime .so's come from the nvidia/cuda base image (/usr/local/cuda/lib64).
