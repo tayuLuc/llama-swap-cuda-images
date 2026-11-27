@@ -138,8 +138,8 @@ jobs:
           # test fail as the brace group's last command, and pipefail+set -e
           # would kill the step with a bare rc 1 under an unhelpful sha256sum line.
           SHA=$( { sha256sum tags.txt; { [ -s "$SELECT_ASSETS_FILE" ] && sha256sum "$SELECT_ASSETS_FILE"; } || true; } | sha256sum | cut -c1-16)
-          echo "selection-key=$SHA" >> "$GITHUB_OUTPUT"
-          echo "selection-key=$SHA (fingerprint of the selected release tags and asset identities)"
+          echo "fingerprint=$SHA" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$SHA (fingerprint of the selected release tags and asset identities)"
           echo "asset identities used:"; cat "$SELECT_ASSETS_FILE" 2>/dev/null || echo "  (none)"
 
       - name: Build and push image
@@ -150,7 +150,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
-            SELECTION_KEY=${{ steps.tags.outputs.selection-key }}
+            SELECTION_KEY=${{ steps.tags.outputs.fingerprint }}
             CUDA_TAG=13.4.2-cudnn-runtime-ubuntu26.04@sha256:44d81ee374c0c00192935010483c5f5fadf47941fe09ead0f0ad48d5c09cc611
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
