@@ -10,8 +10,8 @@
 <rect x="548" y="124" width="92" height="34" rx="17" fill="#21262d" stroke="#3fb950" stroke-width="1.2"/><text x="594.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#3fb950">basalt</text>
 <rect x="648" y="124" width="92" height="34" rx="17" fill="#21262d" stroke="#30363d" stroke-width="1.2"/><text x="694.0" y="146" text-anchor="middle" font-size="14" font-weight="500" fill="#e6edf3">unsloth</text>
 <text x="20" y="196" font-size="13" font-weight="500" fill="#8b949e">green border = not a llama.cpp fork: MoE engine + NInfer-lineage engine</text>
-<text x="20" y="232" font-size="21" font-weight="800" fill="#3fb950">7.7 GB</text>
-<text x="24" y="248" font-size="13" font-weight="500" fill="#8b949e">image</text>
+<text x="20" y="232" font-size="21" font-weight="800" fill="#3fb950">8.1 GB</text>
+<text x="24" y="248" font-size="13" font-weight="500" fill="#8b949e">image on disk, 8 engines</text>
 <text x="270" y="232" font-size="21" font-weight="800" fill="#3fb950">~9 s</text>
 <text x="274" y="248" font-size="13" font-weight="500" fill="#8b949e">slot cold-boot</text>
 <text x="520" y="232" font-size="21" font-weight="800" fill="#3fb950">470-570 tok/s</text>
