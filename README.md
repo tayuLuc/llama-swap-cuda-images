@@ -98,14 +98,13 @@ Rollback is a `docker pull` of any twin, not a rebuild.
 
 | | | | |
 |---|---|---|---|
-| ABI sanity gate: every binary must link `libcudart.so.13` | CUDA base pinned by digest, not by floating tag | alpine fetch stage — build deps never reach the runtime image | slots hot-reload: pass `--watch-config` in the container command, edit YAML live |
-| basalt venv built by uv from `requirements.txt`, zero system python | healthcheck out of the box | `--watch-config` slot reload without container restart | release pruning so ghcr doesn't bloat |
+| ABI sanity gate: every binary must link `libcudart.so.13` | CUDA base pinned by digest, not by floating tag | alpine fetch stage — build deps never reach the runtime image | the container runs as the non-root `app` user |
+| basalt venv built by uv from `requirements.txt`, zero system python | release pruning so ghcr doesn't bloat | no baked HEALTHCHECK: your orchestrator probes `:8080/v1/models` | llama-swap itself hot-reloads slots with `--watch-config` |
 
 ## Reliability notes
 
 - A lane build that produces a binary linked against the wrong CUDA major **fails the lane**, not silently ships.
 - Nightly builds carry `pre=true` on their releases; stable never does.
-- The container runs as the non-root `app` user.
 - The builder dedups by commit ref, so a quiet upstream week costs zero GPU minutes.
 
 ## Quick start
@@ -143,14 +142,7 @@ docker run --gpus all -p 8080:8080 \
 
 ## How it is built
 
-The binaries are compiled in [`yet-another-llama.cpp-cuda-fork`](https://github.com/tayuLuc/yet-another-llama.cpp-cuda-fork) — one builder lane per engine (stable = latest release tag, nightly = branch HEAD, the dedup rules above). On each lane change it dispatches this repo's workflow with `mode=stable|nightly`; this repo fetches the seven artifacts of that mode and packs one image. Full pipeline:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/pipeline-dark.svg">
-  <img alt="Builder lanes pipeline" src="assets/pipeline-light.svg">
-</picture>
-
-Repo layout: `Dockerfile` (multi-stage: fetch → venv → pack), `scripts/select-releases.sh` (which release goes into which mode), `scripts/fetch-binaries.sh` (per-lane download), `llama-swap/config.yaml` (reference config with every engine routed).
+The binaries are compiled in [`yet-another-llama.cpp-cuda-fork`](https://github.com/tayuLuc/yet-another-llama.cpp-cuda-fork) — one builder lane per engine (stable = latest release tag, nightly = branch HEAD, the dedup rules above). On each lane change it dispatches this repo's workflow with `mode=stable|nightly`; this repo fetches the seven artifacts of that mode and packs one image Repo layout: `Dockerfile` (multi-stage: fetch → venv → pack), `scripts/select-releases.sh` (which release goes into which mode), `scripts/fetch-binaries.sh` (per-lane download), `llama-swap/config.yaml` (reference config with every engine routed).
 
 ---
 
