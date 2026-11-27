@@ -25,15 +25,25 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # "basalt*.tar.gz" is exact here - stable ships basalt-vX.Y.Z-linux-x64, the
 # builder lane ships llama.cpp-cuda-13.2-basalt-nightly-amd64, the author's
 # Windows archives are .zip and never match.
+# Unsloth ships its own release train (bNNNN-mix-<sha>, author's prebuilt CUDA 13
+# bundles, no builder compile): a pr-set of unmerged upstream PRs on llama.cpp
+# HEAD. The -newer bundle is dynamically linked and 316 MB; -portable is 437 MB
+# of bundled CUDA runtime, -cuda12-* is the wrong toolkit. strip=1: their
+# tarball packs ./llama-server at the archive root (no top dir), so one strip
+# level lands it in the lane dir.
 BACKENDS='vanilla|llama\.cpp.*vanilla.*amd64\.tar\.gz$|llama-server
 turboquant|llama\.cpp.*turboquant.*amd64\.tar\.gz$|llama-server
 prism|llama\.cpp.*prism.*amd64\.tar\.gz$|llama-server
 atomic|llama\.cpp.*atomic.*amd64\.tar\.gz$|llama-server
 imp|imp-cuda13\.4-imp-[a-z]+-amd64\.tar\.gz$|imp-server
 infernix|infernix-cuda-13\.[0-9]+-infernix-stable-amd64\.tar\.gz$|infernix infernix-serve
-basalt|basalt.*\.tar\.gz$|bin/basalt bin/basalt-vision|jesdga95/basalt|1|requirements.txt|builder'
+basalt|basalt.*\.tar\.gz$|bin/basalt bin/basalt-vision|jesdga95/basalt|1|requirements.txt|builder
+unsloth|app-.*linux-x64-cuda13-newer\.tar\.gz$|llama-server|unslothai/llama.cpp|1'
 
-NAMES=$(printf '%s\n' "$BACKENDS" | awk -F'|' '{ if ($4 != "") print $1"@"$4; else print $1 }')
+# Cross lanes (field 4) carry their asset regex as a third @segment, so the
+# selector filters their release list by the SAME regex the fetcher downloads
+# by (one source of truth; the global cross pattern stays the default).
+NAMES=$(printf '%s\n' "$BACKENDS" | awk -F'|' '{ if ($4 != "") print $1"@"$4"@"$2; else print $1 }')
 
 # Single source of truth for the lane list: the workflow's tags step asks this
 # script instead of keeping its own copy (a repo rename edited one list and the

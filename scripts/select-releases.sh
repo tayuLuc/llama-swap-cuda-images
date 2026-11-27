@@ -8,8 +8,10 @@
 # Usage: select-releases.sh <stable|nightly> <fork> [<fork>...]
 # A lane may be "<name>@<owner>/<repo>": releases are then selected from that
 # repo's latest non-prerelase (basalt ships v0.5.7-style tags from its own repo,
-# the forks repo tags are "<fork>-<sha>" batches). Cross-repo lanes have no
-# nightly concept: like OPTIONAL_NIGHTLY lanes, they are skipped in nightly mode.
+# the forks repo tags are "<fork>-<sha>" batches). Cross-repo lanes in nightly
+# mode prefer a builder-built <lane>-nightly-<sha> release (basalt: the author
+# ships tags only), then fall back to the author's newest release (unsloth's
+# release train is daily HEAD builds, so the author's latest IS the nightly).
 # Output: one "<fork> <tag-or-empty>" line per fork, in the order given.
 # Exit:   1 if any REQUIRED fork has no release for the mode, naming it.
 #         Lanes in OPTIONAL_NIGHTLY (default: infernix) may be absent in
@@ -49,6 +51,7 @@ emit_assets() {
   # avoids re-implementing the tag regex a second time here.
   [ -n "${SELECT_ASSETS_FILE:-}" ] && [ -n "$1" ] || return 0
   local repo="${2:-$SRC_REPO}"
+  local pat="${3:-$ASSET_PAT_CROSS}"
   # Local on purpose: the main loop keeps the forks-repo list in the global
   # rels_json; clobbering it from here would poison the next lane's selection.
   local rels_json
@@ -65,7 +68,7 @@ emit_assets() {
   case "$repo" in
     "$SRC_REPO") ;;
     *)
-      echo "$rels_json" | jq -r --arg f "$1" --arg asset_pat "$ASSET_PAT_CROSS" '
+      echo "$rels_json" | jq -r --arg f "$1" --arg asset_pat "$pat" '
         [ .[] | select(.prerelease | not)
           | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
           | select(.assets | any(.name | test($asset_pat))) ]
@@ -168,7 +171,17 @@ status=0
 for fork in $FORKS; do
   lane="${fork%%@*}"
   repo="$SRC_REPO"
-  [ "$fork" != "$lane" ] && repo="${fork#*@}"
+  pat="$ASSET_PAT_CROSS"
+  if [ "$fork" != "$lane" ]; then
+    rest="${fork#*@}"
+    repo="${rest%%@*}"
+    # Third @segment (fetch-binaries.sh cross lanes): the lane's own asset
+    # regex, so selection filters by the same pattern the fetcher downloads
+    # by. The global ASSET_PAT_CROSS stays the default for lanes without it.
+    case "$rest" in
+      *"@"*) pat="${rest#*@}" ;;
+    esac
+  fi
 
   if [ "$repo" != "$SRC_REPO" ]; then
     # Cross-repo lane (basalt): their own release train, plain v-tags, no
@@ -188,11 +201,26 @@ for fork in $FORKS; do
         emit_assets "$lane" "$SRC_REPO"
         continue
       fi
-      echo "   $lane: cross-repo lane, no builder nightly release (optional, image ships without it)" >&2
+      # No builder nightly: fall back to the AUTHOR's newest release. For
+      # unsloth that IS the nightly content - their release train is daily
+      # HEAD builds (bNNNN-mix-<sha>), so "the commit upstream has not
+      # released yet" is exactly what their latest release ships. Basalt never
+      # lands here: its builder nightly exists (nightly_always in forks.json).
+      tag=$(rels_of "$repo" | jq -r --arg asset_pat "$pat" '
+        [ .[] | select(.prerelease | not)
+          | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
+          | select(.assets | any(.name | test($asset_pat))) ]
+        | sort_by(.published_at) | (last // empty) | .tag_name')
+      if [ -n "$tag" ]; then
+        echo "$lane $tag"
+        emit_assets "$lane" "$repo" "$pat"
+        continue
+      fi
+      echo "   $lane: cross-repo lane, no nightly release anywhere (image ships without it)" >&2
       echo "$lane "
       continue
     fi
-    tag=$(rels_of "$repo" | jq -r --arg asset_pat "$ASSET_PAT_CROSS" '
+    tag=$(rels_of "$repo" | jq -r --arg asset_pat "$pat" '
       [ .[] | select(.prerelease | not)
         | select(.tag_name | test("-(nightly|rc|alpha|beta)[0-9.]*$"; "i") | not)
         | select(.assets | any(.name | test($asset_pat))) ]
@@ -207,7 +235,7 @@ for fork in $FORKS; do
        | sort_by(.published_at) | .[-1].tag_name // empty')
   fi
   echo "$lane ${tag:-}"
-  emit_assets "$lane" "$repo"
+  emit_assets "$lane" "$repo" "$pat"
   [ -n "$tag" ] && continue
   if [ "$MODE" = "nightly" ]; then
     case " $OPTIONAL_NIGHTLY " in *" $lane "*)

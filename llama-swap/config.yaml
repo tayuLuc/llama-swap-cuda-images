@@ -55,6 +55,17 @@ models:
       -ngl 999
     name: "Atomic fork"
 
+  # ---- unsloth: llama.cpp pr-set (unmerged PRs, author prebuilt) ----------
+  # Same CLI as vanilla - the point of the lane is what is pinned inside:
+  # Inkling 2 CUDA fusions and QAT sampling defaults upstream has not merged.
+  "inkling-2-cuda-fusions":
+    cmd: |
+      /opt/llama/unsloth/llama-server
+      --model ${models_dir}/inkling-2.gguf
+      --port ${PORT}
+      -ngl 999
+    name: "unsloth pr-set llama.cpp"
+
   "default":
     cmd: |
       /opt/llama/vanilla/llama-server

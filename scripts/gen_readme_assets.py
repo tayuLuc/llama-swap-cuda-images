@@ -28,14 +28,14 @@ def chip(x, y, w, label, th, fill=None, stroke=None, fg=None, size=15, weight=50
 
 def hero(theme):
     th = T[theme]
-    lanes = ["vanilla", "turboquant", "prism", "atomic", "imp", "infernix", "basalt"]
-    xs = [20, 128, 268, 360, 452, 560, 680]
-    ws = [96, 120, 80, 80, 96, 108, 100]
+    lanes = ["vanilla", "turboquant", "prism", "atomic", "imp", "infernix", "basalt", "unsloth"]
+    xs = [16, 112, 224, 304, 384, 452, 548, 648]
+    ws = [88, 104, 72, 72, 60, 88, 92, 92]
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 250" width="800" height="250"><style>{font_css()}</style>']
     parts.append(f'<text x="20" y="62" font-size="44" font-weight="800" fill="{th["fg"]}">llama-swap <tspan fill="{th["accent2"]}">CUDA</tspan></text>')
-    parts.append(f'<text x="21" y="96" font-size="17" font-weight="500" fill="{th["dim"]}">seven CUDA 13.4 engines · one image · built nightly for sm_120</text>')
+    parts.append(f'<text x="21" y="96" font-size="17" font-weight="500" fill="{th["dim"]}">eight CUDA 13.4 engines · one image · built nightly for sm_120</text>')
     for name, x, w in zip(lanes, xs, ws):
-        accent = name in ("basalt", "infernix")
+        accent = name in ("basalt", "infernix")  # not-llama.cpp engines
         parts.append(chip(x, 124, w, name, th,
                           fill=(th["chip"]), stroke=(th["accent"] if accent else th["chipln"]),
                           fg=(th["accent"] if accent else th["fg"]), size=14))
@@ -51,23 +51,23 @@ def hero(theme):
 
 def pipeline(theme):
     th = T[theme]
-    p = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 330" width="800" height="330"><style>{font_css()}</style>']
+    p = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 344" width="800" height="344"><style>{font_css()}</style>']
     def arrow(x1, y1, x2, y2, col):
         return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{col}" stroke-width="2" marker-end="url(#arr{theme})"/>'
                 f'<defs><marker id="arr{theme}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">'
                 f'<path d="M0,0 L8,4 L0,8 z" fill="{col}"/></marker></defs>')
     p.append(arrow(0, 0, 0, 0, th["dim"]))
-    p.append(f'<text x="20" y="30" font-size="15" font-weight="800" fill="{th["fg"]}">7 upstreams</text>')
-    lanes = ["vanilla", "turboquant", "prism", "atomic", "imp", "infernix", "basalt"]
+    p.append(f'<text x="20" y="26" font-size="15" font-weight="800" fill="{th["fg"]}">8 upstreams</text>')
+    lanes = ["vanilla", "turboquant", "prism", "atomic", "imp", "infernix", "basalt", "unsloth"]
     for i, name in enumerate(lanes):
-        p.append(chip(20, 46 + i * 38, 130, name, th, size=13))
+        p.append(chip(20, 40 + i * 34, 130, name, th, size=13))
     p.append(chip(240, 90, 190, "builder lanes", th, stroke=th["accent2"], fg=th["accent2"], size=15, weight=800))
     p.append(f'<text x="240" y="150" font-size="13" font-weight="500" fill="{th["dim"]}">stable = last release tag</text>')
     p.append(f'<text x="240" y="170" font-size="13" font-weight="500" fill="{th["dim"]}">nightly = branch HEAD</text>')
     p.append(f'<text x="240" y="190" font-size="13" font-weight="500" fill="{th["warn"]}">dedup: nightly == stable: skip</text>')
     p.append(f'<text x="240" y="210" font-size="13" font-weight="500" fill="{th["warn"]}">moving-tag lanes: nightly_always</text>')
-    p.append(arrow(160, 170, 236, 110, th["dim"]))
-    p.append(arrow(160, 170, 236, 130, th["dim"]))
+    p.append(arrow(160, 176, 236, 110, th["dim"]))
+    p.append(arrow(160, 176, 236, 130, th["dim"]))
     p.append(chip(520, 100, 200, ":stable  +  :nightly", th, stroke=th["accent"], fg=th["accent"], size=15, weight=800))
     p.append(f'<text x="520" y="160" font-size="13" font-weight="500" fill="{th["dim"]}">immutable twin per build:</text>')
     p.append(f'<text x="520" y="180" font-size="13" font-weight="500" fill="{th["dim"]}">stable-20261126-4580237…</text>')
