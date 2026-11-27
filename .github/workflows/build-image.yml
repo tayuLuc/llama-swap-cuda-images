@@ -150,7 +150,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             BUILD_MODE=${{ steps.mode.outputs.mode }}
-            SELECTION_KEY=${{ steps.tags.outputs.fingerprint }}
+            SEL_FINGERPRINT=${{ steps.tags.outputs.fingerprint }}
             CUDA_TAG=13.4.2-cudnn-runtime-ubuntu26.04@sha256:44d81ee374c0c00192935010483c5f5fadf47941fe09ead0f0ad48d5c09cc611
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags-calc.outputs.moving }}
