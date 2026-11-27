@@ -40,7 +40,7 @@ def hero(theme):
                           fill=(th["chip"]), stroke=(th["accent"] if accent else th["chipln"]),
                           fg=(th["accent"] if accent else th["fg"]), size=14))
     parts.append(f'<text x="20" y="196" font-size="13" font-weight="500" fill="{th["dim"]}">green border = not a llama.cpp fork: MoE engine + NInfer-lineage engine</text>')
-    stats = [("7.7 GB", "image"), ("~9 s", "slot cold-boot"), ("470-570 tok/s", "MoE decode, RTX 5090")]
+    stats = [("4.3 GB", "compressed pull, 8 engines"), ("~9 s", "slot cold-boot"), ("470-570 tok/s", "MoE decode, RTX 5090")]
     x = 20
     for val, lab in stats:
         w = 250
